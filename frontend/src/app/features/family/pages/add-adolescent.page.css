@@ -1,0 +1,147 @@
+.container {
+  max-width: 700px;
+  margin: 2rem auto;
+  padding: 1rem;
+}
+
+.form-card {
+  border-radius: var(--fb-radius-md);
+  border: 1px solid var(--fb-border);
+  box-shadow: var(--fb-shadow-soft);
+}
+
+mat-card-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--fb-border);
+}
+
+mat-card-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--fb-text);
+}
+
+mat-card-subtitle {
+  color: var(--fb-muted);
+  font-size: 14px;
+}
+
+.form-section {
+  margin-bottom: 2rem;
+}
+
+.form-section h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fb-text);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.form-field {
+  width: 100%;
+}
+
+.form-field.full-width {
+  grid-column: 1 / -1;
+}
+
+mat-form-field {
+  width: 100%;
+}
+
+.password-strength {
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.strength-bar {
+  width: 100%;
+  height: 4px;
+  background-color: var(--fb-border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.strength-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.strength-text {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.toggle-button {
+  cursor: pointer;
+  font-size: 18px;
+}
+
+mat-checkbox {
+  display: block;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.form-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--fb-border);
+}
+
+button[type='submit'] {
+  flex: 1;
+  height: 40px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+button[type='button'] {
+  flex: 1;
+  height: 40px;
+  font-size: 16px;
+}
+
+.button-spinner {
+  display: inline-block;
+  margin-right: 8px;
+}
+
+mat-error {
+  font-size: 12px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .container {
+    margin: 1rem auto;
+    padding: 0.5rem;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .form-actions {
+    flex-direction: column;
+  }
+
+  button {
+    width: 100%;
+  }
+}
