@@ -1,0 +1,152 @@
+@startuml enumerations-securite
+!include ../_style.iuml
+title Diagramme de classes — Énumérations métier et entités de sécurité
+hide empty methods
+
+package "Énumérations (valeurs définies dans les schémas Mongoose)" {
+  enum Role {
+    parent
+    adolescent
+    specialist
+    admin
+  }
+  enum RiskLevel {
+    green
+    orange
+    red
+  }
+  enum RiskCategory {
+    equilibre-sain
+    vigilance-legere
+    risque-modere
+    risque-eleve
+  }
+  enum AppointmentStatus {
+    pending
+    confirmed
+    in-progress
+    completed
+    cancelled
+  }
+  enum ConsultationMode {
+    video
+    audio
+    chat
+  }
+  enum MeetingProvider {
+    jitsi
+    daily
+  }
+  enum MessageType {
+    pre
+    post
+  }
+  enum QuestionType {
+    single-choice
+    likert
+    text
+  }
+  enum SessionStatus {
+    in-progress
+    completed
+  }
+  enum ScoreTrigger {
+    auto
+    manual
+  }
+  enum AlertStatus {
+    open
+    resolved
+  }
+  enum ContentType {
+    image
+    pdf
+    video
+    link
+  }
+  enum Difficulty {
+    debutant
+    intermediaire
+    avance
+  }
+  enum ResourceStatus {
+    draft
+    published
+  }
+  enum ToolkitItemType {
+    contract
+    schedule
+  }
+  enum NotificationType {
+    appointment-requested
+    appointment-confirmed
+    appointment-cancelled
+    appointment-rescheduled
+    bilan-shared
+    message-received
+    score-available
+    risk-alert
+    reevaluation-due
+    resource-published
+  }
+}
+
+package "Sécurité et authentification" {
+  class User {
+    + email : String {unique}
+    - passwordHash : String
+    + role : Role
+    + isActive : Boolean
+    + emailVerified : Boolean
+    + mfaEnabled : Boolean
+  }
+
+  class RefreshToken {
+    - tokenHash : String {unique}
+    + expiresAt : Date
+    + revokedAt : Date [0..1]
+    + revokedReason : String [0..1]
+    - replacedByTokenHash : String [0..1]
+    + createdByIp : String
+    + createdByUserAgent : String
+  }
+
+  class MfaChallenge {
+    - tokenHash : String {unique}
+    - codeHash : String
+    + expiresAt : Date
+    + usedAt : Date [0..1]
+    + attempts : Number = 0
+  }
+
+  class EmailVerificationToken {
+    - tokenHash : String {unique}
+    + expiresAt : Date
+    + usedAt : Date [0..1]
+  }
+
+  class PasswordResetToken {
+    - tokenHash : String {unique}
+    + expiresAt : Date
+    + usedAt : Date [0..1]
+  }
+}
+
+User "1" -- "0..*" RefreshToken : user <
+User "1" -- "0..*" MfaChallenge : user <
+User "1" -- "0..*" EmailVerificationToken : user <
+User "1" -- "0..*" PasswordResetToken : user <
+User ..> Role
+
+note bottom of MfaChallenge
+  Code à 6 chiffres envoyé par e-mail, stocké haché.
+  Invalidé après 5 tentatives ; suppression automatique
+  à expiration (index TTL sur expiresAt).
+end note
+
+note bottom of RefreshToken
+  Rotation à chaque rafraîchissement
+  (replacedByTokenHash) ; révocation à la
+  déconnexion ; purge TTL à expiration.
+end note
+@enduml

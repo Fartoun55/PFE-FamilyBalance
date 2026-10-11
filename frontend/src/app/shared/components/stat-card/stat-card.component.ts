@@ -32,11 +32,10 @@ export type StatCardTrendDirection = 'up' | 'down' | 'flat';
         display: flex;
         align-items: center;
         gap: var(--space-md);
-        padding: var(--space-md);
-        background: var(--fb-surface-strong);
-        border: 1px solid var(--fb-border);
+        padding: 18px 20px;
+        background: var(--fb-surface);
         border-radius: var(--fb-radius-md);
-        box-shadow: var(--fb-shadow-soft);
+        box-shadow: var(--fb-elev-1);
         min-width: 0;
       }
       .stat-icon {
@@ -45,15 +44,15 @@ export type StatCardTrendDirection = 'up' | 'down' | 'flat';
         height: 44px;
         display: grid;
         place-items: center;
-        border-radius: 12px;
+        border-radius: 14px;
         background: var(--fb-primary-soft);
         color: var(--fb-primary);
       }
-      .tone-accent .stat-icon { background: rgba(var(--fb-accent-rgb), 0.1); color: var(--fb-accent-strong); }
-      .tone-success .stat-icon { background: rgba(21, 127, 69, 0.1); color: var(--fb-success); }
-      .tone-warning .stat-icon { background: rgba(183, 121, 31, 0.12); color: var(--fb-warning); }
-      .tone-danger .stat-icon { background: rgba(192, 57, 43, 0.1); color: var(--fb-danger); }
-      .tone-neutral .stat-icon { background: rgba(38, 33, 27, 0.06); color: var(--fb-muted); }
+      .tone-accent .stat-icon { background: var(--fb-accent-soft); color: var(--fb-accent-strong); }
+      .tone-success .stat-icon { background: rgba(var(--fb-success-rgb), 0.1); color: var(--fb-success); }
+      .tone-warning .stat-icon { background: rgba(var(--fb-warning-rgb), 0.1); color: var(--fb-warning); }
+      .tone-danger .stat-icon { background: rgba(var(--fb-danger-rgb), 0.08); color: var(--fb-danger); }
+      .tone-neutral .stat-icon { background: var(--fb-surface-alt); color: var(--fb-text-mid); }
 
       .stat-body {
         display: flex;
@@ -67,8 +66,10 @@ export type StatCardTrendDirection = 'up' | 'down' | 'flat';
         font-weight: 600;
       }
       .stat-value {
-        font-size: 1.6rem;
-        font-weight: 800;
+        font-family: var(--fb-font-serif);
+        font-size: 1.75rem;
+        font-weight: 650;
+        letter-spacing: -0.02em;
         color: var(--fb-text);
         line-height: 1.2;
       }

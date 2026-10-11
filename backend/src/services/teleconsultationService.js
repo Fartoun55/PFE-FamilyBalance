@@ -7,6 +7,12 @@ const RiskAlert = require('../models/RiskAlert');
 const TeleconsultationSpecialistProfile = require('../models/TeleconsultationSpecialistProfile');
 const TeleconsultationAppointment = require('../models/TeleconsultationAppointment');
 const TeleconsultationMessage = require('../models/TeleconsultationMessage');
+const {
+  notifyAppointmentCreated,
+  notifyAppointmentChanged,
+  notifyBilanShared,
+  notifyMessageReceived,
+} = require('./notificationService');
 
 const TELECONSULTATION_SECRET = process.env.TELECONSULTATION_SECRET || 'familybalance-teleconsultation-secret';
 
@@ -41,6 +47,8 @@ const decryptContent = (appointmentId, message) => {
   ]);
   return decrypted.toString('utf8');
 };
+
+const PATIENT_PUBLIC_FIELDS = 'firstName lastName email role adolescentProfile.birthDate';
 
 const generateRoomSlug = () => `tele-${crypto.randomBytes(8).toString('hex')}`;
 
@@ -78,7 +86,31 @@ const ensureSpecialistProfileForUser = async (user) => {
   return profile;
 };
 
+/**
+ * Le profil de téléconsultation d'un spécialiste n'était créé qu'à sa première visite de
+ * son tableau de bord : tant qu'il ne l'avait pas ouvert, il restait absent de l'annuaire
+ * et aucun parent/adolescent ne pouvait lui adresser de demande. On crée donc, avant
+ * chaque lecture de l'annuaire, le profil manquant de tout compte spécialiste actif.
+ */
+const syncSpecialistProfiles = async () => {
+  const linkedIds = await TeleconsultationSpecialistProfile.distinct('linkedUser', { linkedUser: { $ne: null } });
+  const missing = await User.find({ role: 'specialist', isActive: true, _id: { $nin: linkedIds } });
+  for (const user of missing) {
+    await ensureSpecialistProfileForUser(user);
+  }
+
+  // Un compte spécialiste désactivé ne doit plus apparaître dans l'annuaire.
+  const inactiveIds = await User.find({ role: 'specialist', isActive: false }).distinct('_id');
+  if (inactiveIds.length) {
+    await TeleconsultationSpecialistProfile.updateMany(
+      { linkedUser: { $in: inactiveIds }, isActive: true },
+      { $set: { isActive: false } }
+    );
+  }
+};
+
 const loadDirectoryProfiles = async () => {
+  await syncSpecialistProfiles();
   return TeleconsultationSpecialistProfile.find({ isActive: true }).lean();
 };
 
@@ -274,7 +306,9 @@ const createAppointment = async (patientUser, payload) => {
     throw error;
   }
 
-  return appointment.populate('specialistProfile');
+  const created = await appointment.populate('specialistProfile');
+  notifyAppointmentCreated(created, patientUser);
+  return created;
 };
 
 const rescheduleAppointment = async (appointmentId, user, payload) => {
@@ -309,11 +343,13 @@ const rescheduleAppointment = async (appointmentId, user, payload) => {
   }
 
   try {
-    return await TeleconsultationAppointment.findByIdAndUpdate(
+    const updated = await TeleconsultationAppointment.findByIdAndUpdate(
       appointmentId,
       { $set: { slotStart, slotEnd, status: 'confirmed' } },
       { new: true }
     ).populate('specialistProfile');
+    notifyAppointmentChanged(updated, user, 'rescheduled');
+    return updated;
   } catch (error) {
     // Même filet de sécurité que createAppointment : une réservation concurrente sur le
     // nouveau créneau visé peut se glisser entre la vérification et l'écriture.
@@ -351,7 +387,9 @@ const shareBilanWithSpecialist = async (patientUser, appointmentId) => {
   };
 
   await appointment.save();
-  return appointment.populate('specialistProfile');
+  const shared = await appointment.populate('specialistProfile');
+  notifyBilanShared(shared, patientUser);
+  return shared;
 };
 
 const getSharedBilanForAppointment = async (appointmentId, user) => {
@@ -385,13 +423,15 @@ const getSpecialistDashboard = async (specialistUserId) => {
   const appointments = await TeleconsultationAppointment.find({
     $or: [{ specialistUser: specialistUserId }, { specialistProfile: profile._id }],
   })
-    .populate('patient')
+    // Uniquement l'identité du demandeur : le document utilisateur complet (MFA, dates de
+    // connexion…) n'a pas à être exposé au spécialiste.
+    .populate('patient', PATIENT_PUBLIC_FIELDS)
     .populate('specialistProfile')
     .sort({ slotStart: -1 })
     .lean();
 
   const patientIds = [...new Set(appointments.map((item) => String(item.patient?._id || item.patient)).filter(Boolean))];
-  const patients = await User.find({ _id: { $in: patientIds } }).select('firstName lastName email role adolescentProfile').lean();
+  const patients = await User.find({ _id: { $in: patientIds } }).select(PATIENT_PUBLIC_FIELDS).lean();
   const latestScores = await ScoreRecord.find({ user: { $in: patientIds } }).sort({ calculatedAt: -1 }).lean();
   const openAlerts = await RiskAlert.find({ user: { $in: patientIds }, status: 'open' }).sort({ createdAt: -1 }).lean();
 
@@ -417,14 +457,34 @@ const getAppointmentMessages = async (appointmentId, user) => {
   const appointment = await getAppointmentByIdForUser(appointmentId, user);
 
   const messages = await TeleconsultationMessage.find({ appointment: appointment._id })
+    .populate('sender', 'firstName lastName role')
     .sort({ createdAt: 1 })
     .lean();
 
-  return messages.map((message) => ({
-    ...message,
-    content: decryptContent(appointment._id, message),
-  }));
+  return messages.map((message) => toConversationMessage(appointment._id, message));
 };
+
+/**
+ * Forme renvoyée au client : contenu déchiffré, sans les champs de chiffrement, et
+ * identité de l'expéditeur (sinon le client ne peut pas distinguer ses propres messages
+ * de ceux de son interlocuteur). `sender` reste l'identifiant, comme auparavant.
+ */
+const toConversationMessage = (appointmentId, message) => {
+  const sender = message.sender && typeof message.sender === 'object' && message.sender._id ? message.sender : null;
+  return {
+    _id: message._id,
+    appointment: message.appointment,
+    sender: String(sender ? sender._id : message.sender),
+    senderName: sender ? `${sender.firstName || ''} ${sender.lastName || ''}`.trim() : '',
+    senderRole: sender ? sender.role : '',
+    recipient: String(message.recipient),
+    messageType: message.messageType,
+    content: decryptContent(appointmentId, message),
+    createdAt: message.createdAt,
+  };
+};
+
+const MAX_MESSAGE_LENGTH = 2000;
 
 const sendAppointmentMessage = async (appointmentId, user, payload) => {
   const appointment = await getAppointmentByIdForUser(appointmentId, user);
@@ -436,7 +496,15 @@ const sendAppointmentMessage = async (appointmentId, user, payload) => {
     throw new AppError('Le destinataire de la consultation est introuvable.', 404);
   }
 
-  const encrypted = encryptContent(appointment._id, payload.content);
+  const content = String(payload.content || '').trim();
+  if (!content) {
+    throw new AppError('Le contenu du message est obligatoire.', 400);
+  }
+  if (content.length > MAX_MESSAGE_LENGTH) {
+    throw new AppError(`Le message ne peut pas dépasser ${MAX_MESSAGE_LENGTH} caractères.`, 400);
+  }
+
+  const encrypted = encryptContent(appointment._id, content);
   const message = await TeleconsultationMessage.create({
     appointment: appointment._id,
     sender: user._id,
@@ -444,10 +512,15 @@ const sendAppointmentMessage = async (appointmentId, user, payload) => {
     encryptedContent: encrypted.encryptedContent,
     iv: encrypted.iv,
     authTag: encrypted.authTag,
-    messageType: payload.messageType || 'pre',
+    messageType: payload.messageType === 'post' ? 'post' : 'pre',
   });
 
-  return message;
+  // Renvoie le message déchiffré (et non le document chiffré brut) pour que le client
+  // puisse l'afficher immédiatement.
+  await message.populate('sender', 'firstName lastName role');
+  const conversationMessage = toConversationMessage(appointment._id, message.toObject());
+  notifyMessageReceived(appointment, user, recipientId, conversationMessage);
+  return conversationMessage;
 };
 
 const cancelAppointment = async (appointmentId, user) => {
@@ -457,11 +530,13 @@ const cancelAppointment = async (appointmentId, user) => {
     throw new AppError('Ce rendez-vous ne peut plus être annulé.', 400);
   }
 
-  return TeleconsultationAppointment.findByIdAndUpdate(
+  const cancelled = await TeleconsultationAppointment.findByIdAndUpdate(
     appointmentId,
     { $set: { status: 'cancelled' } },
     { new: true }
   ).populate('specialistProfile');
+  notifyAppointmentChanged(cancelled, user, 'cancelled');
+  return cancelled;
 };
 
 const getRoomDetails = async (appointmentId, user) => {

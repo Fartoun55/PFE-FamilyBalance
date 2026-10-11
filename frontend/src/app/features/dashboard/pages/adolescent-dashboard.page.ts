@@ -1,28 +1,24 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MatCardModule } from '@angular/material/card';
-import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { MatTabsModule } from '@angular/material/tabs';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { MatTooltipModule } from '@angular/material/tooltip';
 import { Router } from '@angular/router';
 import { AdolescentDashboardService, AdolescentDashboard } from '../services/adolescent-dashboard.service';
 import { EducationResource } from '../../education/models/education.models';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
+import { StatCardComponent, StatCardTone } from '../../../shared/components/stat-card/stat-card.component';
+import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
 
 @Component({
   selector: 'app-adolescent-dashboard-page',
   standalone: true,
   imports: [
     CommonModule,
-    MatCardModule,
-    MatButtonModule,
     MatIconModule,
-    MatProgressBarModule,
-    MatTabsModule,
     MatSnackBarModule,
-    MatTooltipModule,
+    PageHeaderComponent,
+    StatCardComponent,
+    EmptyStateComponent,
   ],
   templateUrl: './adolescent-dashboard.page.html',
   styleUrls: ['./adolescent-dashboard.page.css'],
@@ -75,16 +71,29 @@ export class AdolescentDashboardPage implements OnInit {
     });
   }
 
-  getRiskLevelColor(): string {
-    const riskLevel = this.dashboard()?.stats?.riskLevel?.toLowerCase() || '';
-    const colors: { [key: string]: string } = {
-      'equilibre-sain': '#157f45',
-      'vigilance-legere': '#b7791f',
-      'risque-modere': '#c9622f',
-      'risque-eleve': '#c0392b',
-      'non-evaluée': '#a89f92',
+  private riskKey(): string {
+    return this.dashboard()?.stats?.riskLevel?.toLowerCase() || '';
+  }
+
+  /** Ton de la carte « niveau » : couleurs d'état réservées, toujours accompagnées d'un libellé et d'une icône. */
+  riskTone(): StatCardTone {
+    const tones: Record<string, StatCardTone> = {
+      'equilibre-sain': 'success',
+      'vigilance-legere': 'warning',
+      'risque-modere': 'warning',
+      'risque-eleve': 'danger',
     };
-    return colors[riskLevel] || '#a89f92';
+    return tones[this.riskKey()] || 'neutral';
+  }
+
+  riskIcon(): string {
+    const icons: Record<string, string> = {
+      'equilibre-sain': 'check_circle',
+      'vigilance-legere': 'info',
+      'risque-modere': 'warning',
+      'risque-eleve': 'warning',
+    };
+    return icons[this.riskKey()] || 'help_outline';
   }
 
   getRiskLevelLabel(): string {
@@ -95,7 +104,14 @@ export class AdolescentDashboardPage implements OnInit {
       'risque-eleve': 'Risque élevé',
       'non-evaluée': 'Non évaluée',
     };
-    return labels[this.dashboard()?.stats?.riskLevel?.toLowerCase() || ''] || 'Non évaluée';
+    return labels[this.riskKey()] || 'Non évaluée';
+  }
+
+  /** Un score élevé = meilleur équilibre (seuils identiques au tableau de bord famille). */
+  scoreTone(score: number): 'high' | 'medium' | 'low' {
+    if (score >= 75) return 'high';
+    if (score >= 50) return 'medium';
+    return 'low';
   }
 
   goToSurvey(): void {

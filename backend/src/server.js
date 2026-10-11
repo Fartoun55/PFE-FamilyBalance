@@ -3,6 +3,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const app = require('./app');
 const connectDB = require('./config/db');
+const { initRealtime } = require('./realtime/socket');
 
 const PORT = process.env.PORT || 5001;
 
@@ -13,6 +14,9 @@ const start = async () => {
       // eslint-disable-next-line no-console
       console.log(`FamilyBalance API running on port ${PORT}`);
     });
+
+    // Notifications et messages en temps réel, sur le même port que l'API.
+    initRealtime(server);
 
     server.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {

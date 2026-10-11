@@ -1,0 +1,740 @@
+/* ==========================================================================
+   Pages d'authentification — mises en page partagées
+   · .auth-split  : connexion / inscription (bandeau d'encre + formulaire)
+   · .auth-center : pages « carte » (mot de passe oublié, MFA, vérification
+                    e-mail, réinitialisation)
+   ========================================================================== */
+
+/* ── Mise en page scindée ─────────────────────────────────────────────── */
+
+.auth-split {
+	display: grid;
+	grid-template-columns: minmax(360px, 42%) 1fr;
+	min-height: 100vh;
+	background: var(--fb-bg);
+}
+
+.auth-aside {
+	position: sticky;
+	top: 0;
+	height: 100vh;
+	display: flex;
+	flex-direction: column;
+	gap: 32px;
+	padding: clamp(28px, 4vw, 48px) clamp(28px, 4vw, 56px);
+	overflow: hidden;
+	isolation: isolate;
+	background: var(--fb-ink);
+	color: var(--fb-on-ink);
+}
+
+/* Halos discrets ambre / sarcelle, à la manière des bandeaux d'encre de la référence. */
+.auth-aside::before,
+.auth-aside::after {
+	content: '';
+	position: absolute;
+	z-index: -1;
+	border-radius: 50%;
+	filter: blur(60px);
+	pointer-events: none;
+}
+
+.auth-aside::before {
+	width: 420px;
+	height: 420px;
+	right: -160px;
+	top: -140px;
+	background: rgba(var(--fb-accent-rgb), 0.22);
+}
+
+.auth-aside::after {
+	width: 460px;
+	height: 460px;
+	left: -180px;
+	bottom: -200px;
+	background: rgba(var(--fb-primary-rgb), 0.45);
+}
+
+.auth-aside-body {
+	margin: auto 0;
+	max-width: 30rem;
+}
+
+.auth-aside .fb-eyebrow {
+	color: var(--fb-accent-hover);
+}
+
+.auth-aside h2 {
+	margin: 14px 0 16px;
+	color: #fff;
+	font-size: clamp(1.9rem, 1.2rem + 1.8vw, 2.75rem);
+	line-height: 1.12;
+}
+
+.auth-aside-lead {
+	margin: 0 0 28px;
+	font-size: 16.5px;
+	line-height: 1.6;
+	color: var(--fb-on-ink-mid);
+}
+
+.auth-points {
+	display: grid;
+	gap: 14px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.auth-points li {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	font-size: 15px;
+	line-height: 1.45;
+	color: var(--fb-on-ink-mid);
+}
+
+.auth-points li strong {
+	display: block;
+	color: #fff;
+	font-weight: 700;
+}
+
+.auth-points .mat-icon {
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	padding: 6px;
+	font-size: 20px;
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--fb-accent-hover);
+}
+
+.auth-trust {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	color: var(--fb-on-ink-dim);
+}
+
+.auth-trust .mat-icon {
+	width: 18px;
+	height: 18px;
+	font-size: 18px;
+}
+
+.auth-main {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: clamp(28px, 5vw, 56px) clamp(16px, 4vw, 48px);
+}
+
+.auth-panel {
+	width: 100%;
+	max-width: 440px;
+	animation: slideUp 0.35s var(--fb-ease);
+}
+
+.auth-panel--wide {
+	max-width: 600px;
+}
+
+.auth-panel > .auth-mobile-brand {
+	display: none;
+	margin-bottom: 28px;
+}
+
+.auth-head {
+	margin-bottom: 28px;
+}
+
+.auth-head h1 {
+	margin: 0 0 8px;
+	font-size: clamp(1.9rem, 1.5rem + 1vw, 2.4rem);
+	line-height: 1.1;
+}
+
+.auth-head p {
+	margin: 0;
+	color: var(--fb-text-mid);
+	font-size: 15.5px;
+}
+
+@media (max-width: 960px) {
+	.auth-split {
+		grid-template-columns: 1fr;
+	}
+
+	.auth-aside {
+		display: none;
+	}
+
+	.auth-panel > .auth-mobile-brand {
+		display: flex;
+	}
+
+	.auth-main {
+		justify-content: flex-start;
+	}
+}
+
+/* ── Pages « carte » ──────────────────────────────────────────────────── */
+
+.auth-center {
+	display: grid;
+	place-items: center;
+	min-height: 100vh;
+	padding: clamp(24px, 6vh, 64px) 16px;
+	/* Motif discret (points sarcelle) sous un dégradé : relief sans gêner la lecture. */
+	background:
+		linear-gradient(180deg, rgba(238, 243, 251, 0.82) 0, rgba(247, 249, 253, 0.9) 320px),
+		url('/assets/illustrations/bg-pattern.svg') repeat,
+		var(--fb-bg);
+}
+
+.auth-card {
+	width: min(480px, 100%);
+	padding: clamp(24px, 5vw, 40px);
+	border-radius: var(--fb-radius-lg);
+	background: var(--fb-surface);
+	box-shadow: var(--fb-elev-2);
+	animation: slideUp 0.35s var(--fb-ease);
+}
+
+.auth-card-logo {
+	display: flex;
+	justify-content: center;
+	margin-bottom: 24px;
+}
+
+.auth-card-head {
+	text-align: center;
+	margin-bottom: 24px;
+}
+
+.auth-card-head h1 {
+	margin: 0 0 8px;
+	font-size: clamp(1.6rem, 1.35rem + 0.8vw, 1.95rem);
+	line-height: 1.15;
+}
+
+.auth-card-head p {
+	margin: 0 auto;
+	max-width: 36ch;
+	color: var(--fb-text-mid);
+	font-size: 15px;
+}
+
+.auth-icon {
+	display: grid;
+	place-items: center;
+	width: 60px;
+	height: 60px;
+	margin: 0 auto 16px;
+	border-radius: 20px;
+	background: var(--fb-primary-soft);
+	color: var(--fb-primary);
+}
+
+.auth-icon .mat-icon {
+	width: 28px;
+	height: 28px;
+	font-size: 28px;
+}
+
+.auth-icon--success {
+	background: rgba(var(--fb-success-rgb), 0.1);
+	color: var(--fb-success);
+}
+
+.auth-icon--danger {
+	background: rgba(var(--fb-danger-rgb), 0.08);
+	color: var(--fb-danger);
+}
+
+.auth-card-foot {
+	margin-top: 24px;
+	padding-top: 20px;
+	border-top: 1px solid var(--fb-border);
+	text-align: center;
+	font-size: 14px;
+}
+
+.auth-card-foot a {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.auth-card-foot .mat-icon {
+	width: 18px;
+	height: 18px;
+	font-size: 18px;
+}
+
+/* Progression en segments (étapes d'un parcours) */
+.auth-progress {
+	display: flex;
+	gap: 6px;
+	margin: 0 auto 24px;
+	max-width: 160px;
+}
+
+.auth-progress span {
+	flex: 1;
+	height: 4px;
+	border-radius: 4px;
+	background: var(--fb-sunken);
+}
+
+.auth-progress span.done {
+	background: var(--fb-primary);
+}
+
+.auth-progress span.active {
+	background: var(--fb-accent);
+}
+
+/* ── Formulaires ──────────────────────────────────────────────────────── */
+
+.auth-form {
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+}
+
+.auth-field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+}
+
+.auth-label {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	font-size: 13.5px;
+	font-weight: 600;
+	color: var(--fb-text);
+}
+
+.auth-label a {
+	font-size: 13px;
+}
+
+.auth-optional {
+	margin-left: 6px;
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--fb-muted);
+}
+
+.auth-control {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	height: 50px;
+	padding: 0 14px;
+	border: 1.5px solid var(--fb-border);
+	border-radius: 14px;
+	background: var(--fb-surface);
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.auth-control:hover {
+	border-color: var(--fb-border-strong);
+}
+
+.auth-control:focus-within {
+	border-color: var(--fb-primary);
+	box-shadow: 0 0 0 4px rgba(var(--fb-primary-rgb), 0.12);
+}
+
+.auth-control.invalid {
+	border-color: var(--fb-danger);
+	box-shadow: 0 0 0 4px rgba(var(--fb-danger-rgb), 0.08);
+}
+
+.auth-control > .mat-icon {
+	flex-shrink: 0;
+	width: 20px;
+	height: 20px;
+	font-size: 20px;
+	color: var(--fb-faint);
+	transition: color 0.15s ease;
+}
+
+.auth-control:focus-within > .mat-icon {
+	color: var(--fb-primary);
+}
+
+.auth-control input {
+	flex: 1;
+	min-width: 0;
+	height: 100%;
+	border: none;
+	outline: none;
+	background: transparent;
+	color: var(--fb-text);
+	font-size: 15px;
+}
+
+.auth-control input::placeholder {
+	color: var(--fb-faint);
+}
+
+.auth-toggle {
+	display: grid;
+	place-items: center;
+	width: 36px;
+	height: 36px;
+	margin-right: -8px;
+	padding: 0;
+	border: none;
+	border-radius: 10px;
+	background: transparent;
+	color: var(--fb-muted);
+	cursor: pointer;
+}
+
+.auth-toggle:hover {
+	background: var(--fb-surface-alt);
+	color: var(--fb-text);
+}
+
+.auth-toggle .mat-icon {
+	width: 20px;
+	height: 20px;
+	font-size: 20px;
+}
+
+.auth-hint {
+	font-size: 12.5px;
+	color: var(--fb-muted);
+}
+
+.auth-error {
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--fb-danger);
+}
+
+.auth-ok {
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--fb-success);
+}
+
+.auth-row {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 14px;
+}
+
+.auth-submit {
+	min-height: 52px;
+	margin-top: 4px;
+	font-size: 15.5px;
+}
+
+.auth-submit .fb-spinner {
+	width: 18px;
+	height: 18px;
+	border-color: rgba(255, 255, 255, 0.35);
+	border-top-color: #fff;
+}
+
+.auth-alt {
+	margin: 24px 0 0;
+	text-align: center;
+	font-size: 14.5px;
+	color: var(--fb-text-mid);
+}
+
+/* Jauge de robustesse du mot de passe */
+.auth-strength {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.auth-strength-track {
+	flex: 1;
+	height: 6px;
+	border-radius: 6px;
+	background: var(--fb-sunken);
+	overflow: hidden;
+}
+
+.auth-strength-fill {
+	height: 100%;
+	border-radius: 6px;
+	transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.auth-strength [data-level='weak'] { background: var(--fb-danger); color: var(--fb-danger); }
+.auth-strength [data-level='medium'] { background: var(--fb-accent); color: var(--fb-accent-strong); }
+.auth-strength [data-level='strong'] { background: var(--fb-success); color: var(--fb-success); }
+
+.auth-strength-label {
+	min-width: 52px;
+	font-size: 12.5px;
+	font-weight: 700;
+	text-align: right;
+	background: none !important;
+}
+
+/* Récapitulatif clé / valeur */
+.auth-summary {
+	display: grid;
+	gap: 0;
+	margin: 0 0 20px;
+	padding: 4px 16px;
+	border-radius: var(--fb-radius-sm);
+	background: var(--fb-surface-alt);
+}
+
+.auth-summary div {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 0;
+	font-size: 14px;
+}
+
+.auth-summary div + div {
+	border-top: 1px solid var(--fb-border);
+}
+
+.auth-summary dt {
+	color: var(--fb-muted);
+}
+
+.auth-summary dd {
+	margin: 0;
+	font-weight: 600;
+	text-align: right;
+}
+
+@media (max-width: 480px) {
+	.auth-row {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* ── Illustrations ────────────────────────────────────────────────────── */
+
+/* Bandeau latéral (connexion, inscription) : la scène se pose sur le fond d'encre. */
+.auth-aside-illus {
+	width: min(100%, 340px);
+	margin: 0 0 8px -12px;
+	filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.25));
+}
+
+/* Écrans peu hauts : on privilégie le texte. */
+@media (max-height: 760px) {
+	.auth-aside-illus {
+		display: none;
+	}
+}
+
+/* Pages « carte » : visuel au-dessus du titre, à la place de l'icône. */
+.auth-illus {
+	width: min(220px, 72%);
+	margin: -8px auto 8px;
+}
+
+/* ── Connexion / inscription : format compact ─────────────────────────────
+   Limité à .auth-split pour ne pas modifier les pages « carte ».          */
+
+.auth-split {
+	grid-template-columns: minmax(320px, 36%) 1fr;
+}
+
+.auth-split .auth-aside {
+	gap: 24px;
+	padding: clamp(24px, 3vw, 40px) clamp(24px, 3vw, 44px);
+}
+
+.auth-split .auth-aside-body {
+	max-width: 26rem;
+}
+
+.auth-split .auth-aside h2 {
+	margin: 10px 0 12px;
+	font-size: clamp(1.6rem, 1.1rem + 1.3vw, 2.2rem);
+}
+
+.auth-split .auth-aside-lead {
+	margin-bottom: 20px;
+	font-size: 15px;
+	line-height: 1.55;
+}
+
+.auth-split .auth-points {
+	gap: 10px;
+}
+
+.auth-split .auth-points li {
+	font-size: 14px;
+}
+
+.auth-split .auth-points .mat-icon {
+	width: 28px;
+	height: 28px;
+	padding: 5px;
+	font-size: 18px;
+}
+
+.auth-split .auth-aside-illus {
+	width: min(100%, 280px);
+	margin-bottom: 4px;
+}
+
+.auth-split .auth-main {
+	padding: clamp(20px, 3.5vh, 40px) clamp(16px, 3vw, 40px);
+}
+
+.auth-split .auth-panel {
+	max-width: 400px;
+}
+
+.auth-split .auth-panel--wide {
+	max-width: 540px;
+}
+
+.auth-split .auth-panel > .auth-mobile-brand {
+	margin-bottom: 18px;
+}
+
+.auth-split .auth-head {
+	margin-bottom: 18px;
+}
+
+.auth-split .auth-head h1 {
+	margin-bottom: 6px;
+	font-size: clamp(1.55rem, 1.3rem + 0.7vw, 1.95rem);
+}
+
+.auth-split .auth-head p {
+	font-size: 14.5px;
+}
+
+.auth-split .auth-form {
+	gap: 14px;
+}
+
+.auth-split .auth-field {
+	gap: 5px;
+}
+
+.auth-split .auth-label {
+	font-size: 13px;
+}
+
+.auth-split .auth-row {
+	gap: 12px;
+}
+
+.auth-split .auth-control {
+	height: 44px;
+	padding: 0 12px;
+	gap: 8px;
+	border-radius: 12px;
+}
+
+.auth-split .auth-control > .mat-icon {
+	width: 18px;
+	height: 18px;
+	font-size: 18px;
+}
+
+.auth-split .auth-control input {
+	font-size: 14.5px;
+}
+
+.auth-split .auth-toggle {
+	width: 32px;
+	height: 32px;
+}
+
+.auth-split .auth-submit {
+	min-height: 46px;
+	margin-top: 2px;
+	font-size: 15px;
+}
+
+.auth-split .auth-alt {
+	margin-top: 16px;
+	font-size: 14px;
+}
+
+/* Connexion : formulaire posé sur une carte, pour l'ancrer au centre de la zone. */
+.auth-split .auth-panel:not(.auth-panel--wide) {
+	max-width: 432px;
+	padding: 30px 32px 26px;
+	border: 1px solid var(--fb-border);
+	border-radius: var(--fb-radius-lg);
+	background: var(--fb-surface);
+	box-shadow: var(--fb-elev-2);
+}
+
+/* Écrans peu hauts (portables 1280×720, 1366×768) : on resserre encore. */
+@media (min-width: 961px) and (max-height: 820px) {
+	.auth-split .auth-main {
+		padding-block: 16px;
+	}
+
+	.auth-split .auth-head {
+		margin-bottom: 12px;
+	}
+
+	.auth-split .auth-head h1 {
+		font-size: 1.6rem;
+	}
+
+	.auth-split .auth-form {
+		gap: 10px;
+	}
+
+	.auth-split .auth-points li span {
+		font-size: 13.5px;
+	}
+}
+
+/* Tablette et mobile : formulaire seul, centré, sans bandeau. */
+@media (max-width: 960px) {
+	.auth-split {
+		grid-template-columns: 1fr;
+	}
+
+	.auth-split .auth-main {
+		justify-content: center;
+		min-height: 100vh;
+	}
+}
+
+@media (max-width: 480px) {
+	.auth-split .auth-main {
+		justify-content: flex-start;
+		padding-top: 24px;
+	}
+
+	.auth-split .auth-panel:not(.auth-panel--wide) {
+		padding: 0;
+		border: none;
+		background: transparent;
+		box-shadow: none;
+	}
+
+	.auth-split .auth-head h1 {
+		font-size: 1.5rem;
+	}
+}

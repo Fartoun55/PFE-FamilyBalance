@@ -1,0 +1,87 @@
+@startuml seq-notifications
+!include ../_style.iuml
+title Diagramme de séquence — Création et réception d'une notification
+autonumber "<b>[0]"
+skinparam maxMessageSize 230
+
+actor "Utilisateur" as U
+box "Frontend Angular" #F7F9FD
+  participant "ShellLayout /\nNotificationBell" as Bell
+  participant "NotificationService\n(frontend)" as FSvc
+end box
+box "Backend Node.js / Express" #FFFBEB
+  participant "Socket.IO\n(realtime)" as WS
+  participant "Notification\nController" as Ctrl
+  participant "Notification\nService" as Svc
+  participant "Service métier\n(téléconsultation, scoring,\néducation)" as Biz
+end box
+database "MongoDB" as DB
+
+== Connexion temps réel (ouverture de l'espace connecté) ==
+Bell -> FSvc : start()
+FSvc -> Ctrl : GET /api/notifications/unread-count
+Ctrl -> Svc : getUnreadCount(user)
+Svc -> Svc : syncReminders() — rappels de réévaluation dus
+Svc --> FSvc : { unreadCount }
+FSvc -> WS : connexion WebSocket (auth: jeton JWT)
+WS -> WS : verifyAccessToken() + compte actif
+alt jeton absent, invalide ou expiré
+  WS --> FSvc : connect_error
+  FSvc -> FSvc : nouvelle tentative après 10 s\n(avec le jeton rafraîchi)
+else jeton valide
+  WS -> WS : socket.join('user:<id>') — salle privée
+  WS --> FSvc : connect
+end
+
+== Création à partir d'un événement métier ==
+Biz -> Svc : notify*(…) — ex. réservation, message,\nscore, ressource publiée
+note right of Svc
+  Effet secondaire « safely » : une erreur de
+  notification ne fait jamais échouer l'action métier.
+end note
+Svc -> Svc : choix du destinataire selon le rôle\n(ex. alerte de risque : parent uniquement)
+alt événement ponctuel (dedupeKey)
+  Svc -> DB : Notification.create(user, dedupeKey, …)
+  alt déjà notifié (index unique user + dedupeKey)
+    DB --> Svc : E11000
+    Svc -> Svc : ignoré — pas de doublon
+  end
+else événement répété (groupKey, ex. messages)
+  Svc -> DB : findOneAndUpdate(non lue, groupKey) : count + 1
+  opt aucune notification non lue
+    Svc -> DB : Notification.create(groupKey)
+  end
+end
+Svc -> DB : countDocuments({ user, readAt: null })
+Svc -> WS : emitToUser(userId, 'notification:new' | 'notification:updated')
+WS ->> FSvc : { notification, unreadCount }
+FSvc -> FSvc : signaux mis à jour (liste + compteur)
+FSvc --> Bell : badge mis à jour
+Bell --> U : nouvelle notification visible
+
+== Consultation et lecture ==
+U -> Bell : ouvre la cloche
+Bell -> FSvc : load()
+FSvc -> Ctrl : GET /api/notifications?limit=15
+Ctrl -> Svc : listNotifications(user)
+Svc -> DB : find({ user }) trié par lastEventAt
+Svc --> FSvc : { notifications, hasMore, unreadCount }
+FSvc --> U : liste (titre, message, date, statut)
+U -> Bell : clique sur une notification
+Bell -> FSvc : markAsRead(notification)
+FSvc -> Ctrl : PATCH /api/notifications/:id/read
+Ctrl -> Svc : markAsRead(user, id)
+Svc -> DB : findOne({ _id, user }) — filtre par propriétaire
+alt notification d'un autre utilisateur ou inexistante
+  Svc --> FSvc : 404
+else
+  Svc -> DB : readAt = now
+  Svc -> WS : emitToUser('notification:count')
+  Svc --> FSvc : 200
+end
+Bell --> U : navigation vers la page liée (link + linkParams)
+opt « Tout marquer comme lu »
+  U -> Bell : clic
+  FSvc -> Ctrl : PATCH /api/notifications/read-all
+end
+@enduml

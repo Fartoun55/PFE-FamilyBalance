@@ -1,0 +1,70 @@
+@startuml cu-famille
+!include ../_style.iuml
+title Diagramme de cas d'utilisation — Parent et adolescent (membres de la famille)
+left to right direction
+
+actor "Membre de\nla famille" as Famille
+actor "Parent" as Parent
+actor "Adolescent" as Ado
+Famille <|-- Parent
+Famille <|-- Ado
+
+rectangle "FamilyBalance — Espace famille" {
+  package "Évaluation" {
+    usecase "Passer un\nquestionnaire adaptatif" as Survey
+    usecase "Choisir un domaine\nd'évaluation" as Domain
+    usecase "Reprendre une\nsession en cours" as Resume
+    usecase "Remplir le questionnaire\npour un enfant" as ForChild
+    usecase "Calculer le score\n(automatique)" as Score
+    usecase "Consulter ses résultats\net l'historique" as Results
+    usecase "Exporter le rapport\nen PDF" as ExportPdf
+  }
+  package "Suivi familial" {
+    usecase "Ajouter un\nadolescent" as AddAdo
+    usecase "Consulter le tableau\nde bord famille" as FamilyDash
+    usecase "Exporter le bilan\nd'un enfant (PDF)" as ChildPdf
+    usecase "Consulter son\nespace personnel" as AdoSpace
+  }
+  package "Téléconsultation" {
+    usecase "Rechercher un\nspécialiste (annuaire)" as Directory
+    usecase "Consulter les\ncréneaux disponibles" as Slots
+    usecase "Réserver une\ntéléconsultation" as Book
+    usecase "Annuler ou déplacer\nun rendez-vous" as Manage
+    usecase "Partager son bilan\nFamilyBalance" as Share
+    usecase "Rejoindre la\nvisioconférence" as Join
+    usecase "Échanger avec le\nspécialiste (messagerie)" as Msg
+  }
+  package "Éducation" {
+    usecase "Consulter les ressources\nadaptées à l'âge" as Res
+    usecase "Suivre un parcours\ne-learning" as Paths
+    usecase "Utiliser la boîte à outils\n(contrat, planning)" as Toolbox
+    usecase "Générer la newsletter\npersonnalisée" as News
+  }
+}
+
+Famille --> Survey
+Famille --> Results
+Famille --> Directory
+Famille --> Book
+Famille --> Manage
+Famille --> Join
+Famille --> Msg
+Famille --> Res
+Famille --> Paths
+Famille --> News
+Parent --> AddAdo
+Parent --> FamilyDash
+Parent --> Toolbox
+Ado --> AdoSpace
+
+Survey ..> Domain : <<include>>
+Resume .> Survey : <<extend>>
+ForChild .> Survey : <<extend>>\n(parent uniquement)
+Survey ..> Score : <<include>>
+ExportPdf .> Results : <<extend>>
+ChildPdf .> FamilyDash : <<extend>>
+Book ..> Slots : <<include>>
+Directory <.. Book : <<include>>
+Share .> Book : <<extend>>
+
+@enduml

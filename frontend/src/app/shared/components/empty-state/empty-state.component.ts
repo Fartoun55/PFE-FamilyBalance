@@ -1,16 +1,25 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
+import { IllustrationComponent, IllustrationName } from '../illustration/illustration.component';
 
 @Component({
   selector: 'app-empty-state',
   standalone: true,
-  imports: [CommonModule, MatIconModule],
+  imports: [CommonModule, MatIconModule, IllustrationComponent],
   template: `
     <div class="empty-state">
+      <app-illustration
+        *ngIf="illustration; else iconTpl"
+        class="empty-illustration"
+        [name]="illustration"
+        [fallbackIcon]="icon"
+      ></app-illustration>
+      <ng-template #iconTpl>
       <div class="empty-icon" *ngIf="icon" aria-hidden="true">
         <mat-icon>{{ icon }}</mat-icon>
       </div>
+      </ng-template>
       <h2 class="empty-title">{{ title }}</h2>
       <p class="empty-message" *ngIf="message">{{ message }}</p>
       <div class="empty-actions">
@@ -28,9 +37,13 @@ import { MatIconModule } from '@angular/material/icon';
         padding: var(--space-xl) var(--space-md);
         color: var(--fb-muted);
       }
+      .empty-illustration {
+        width: min(220px, 70%);
+        margin-bottom: var(--space-sm);
+      }
       .empty-icon {
-        width: 56px;
-        height: 56px;
+        width: 64px;
+        height: 64px;
         display: grid;
         place-items: center;
         border-radius: 50%;
@@ -45,19 +58,20 @@ import { MatIconModule } from '@angular/material/icon';
       }
       .empty-title {
         margin: 0 0 4px;
-        font-size: var(--type-lg);
-        font-weight: 700;
-        color: var(--fb-text);
+        font-size: 1.25rem;
       }
       .empty-message {
         margin: 0;
         max-width: 40ch;
         font-size: var(--type-md);
-        line-height: 1.5;
+        line-height: 1.55;
+        color: var(--fb-text-mid);
       }
       .empty-actions {
         margin-top: var(--space-md);
         display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
         gap: var(--space-sm);
       }
     `,
@@ -67,4 +81,6 @@ export class EmptyStateComponent {
   @Input() icon?: string;
   @Input() title = '';
   @Input() message?: string;
+  /** Illustration affichée à la place de l'icône ; l'icône sert de repli. */
+  @Input() illustration?: IllustrationName;
 }

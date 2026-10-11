@@ -52,16 +52,16 @@ const CONTENT_ACTION_LABELS: Record<EducationResourceContentType, string> = {
   template: `
     <section class="edu-shell">
       <app-page-header
-        class="hero"
-        eyebrow="Espace Educatif & Ressources"
+        eyebrow="Ressources éducatives"
         [title]="userRole() === 'admin' ? 'Gérer les ressources éducatives' : 'Apprendre, progresser et outiller la famille'"
         [subtitle]="userRole() === 'admin'
           ? 'Ajoutez, modifiez, publiez ou dépubliez les ressources adaptées par âge affichées aux familles.'
-          : 'Bibliothèque filtrée, e-learning gamifié, boîte parentale et newsletter personnalisée.'"
+          : 'Une bibliothèque adaptée à chaque âge, des parcours à suivre, une boîte à outils parentale et une newsletter personnalisée.'"
+        illustration="education"
       ></app-page-header>
 
-      <p class="status" *ngIf="statusMessage()">{{ statusMessage() }}</p>
-      <p class="error" *ngIf="errorMessage()">{{ errorMessage() }}</p>
+      <div class="fb-alert fb-alert--success" role="status" *ngIf="statusMessage()"><mat-icon>check_circle</mat-icon><span>{{ statusMessage() }}</span></div>
+      <div class="fb-alert fb-alert--error" role="alert" *ngIf="errorMessage()"><mat-icon>error_outline</mat-icon><span>{{ errorMessage() }}</span></div>
 
       <!-- ============================= ADMINISTRATEUR ============================= -->
       <ng-container *ngIf="userRole() === 'admin'">
@@ -178,15 +178,16 @@ const CONTENT_ACTION_LABELS: Record<EducationResourceContentType, string> = {
           <ng-template #noAdminResources>
             <app-empty-state
               icon="menu_book"
+              illustration="education"
               title="Aucune ressource"
               message="Créez votre première ressource éducative avec le formulaire ci-dessus."
             ></app-empty-state>
           </ng-template>
         </article>
 
-        <div class="confirm-overlay" *ngIf="resourcePendingDelete() as target" (click)="cancelDeleteResource()">
-          <div class="confirm-box" (click)="$event.stopPropagation()">
-            <h3>Supprimer cette ressource ?</h3>
+        <div class="fb-modal-backdrop" *ngIf="resourcePendingDelete() as target" (click)="cancelDeleteResource()">
+          <div class="fb-modal confirm-box" role="dialog" aria-modal="true" aria-labelledby="delete-title" (click)="$event.stopPropagation()">
+            <h3 id="delete-title">Supprimer cette ressource ?</h3>
             <p>« {{ target.title }} » sera définitivement supprimée, y compris son fichier éventuel. Cette action est irréversible.</p>
             <div class="confirm-actions">
               <button mat-stroked-button type="button" [disabled]="deletingResource()" (click)="cancelDeleteResource()">Annuler</button>
@@ -252,6 +253,7 @@ const CONTENT_ACTION_LABELS: Record<EducationResourceContentType, string> = {
           <app-empty-state
             *ngIf="!resources().length"
             icon="menu_book"
+            illustration="empty-search"
             title="Aucune ressource trouvée"
             message="Essayez d'élargir votre recherche ou de changer de catégorie."
           ></app-empty-state>
@@ -373,70 +375,135 @@ const CONTENT_ACTION_LABELS: Record<EducationResourceContentType, string> = {
   `,
   styles: [
     `
-      .edu-shell { max-width: 1100px; margin: 0 auto; padding: 1rem; display: grid; gap: 1rem; }
-      .hero { display: block; border: 1px solid var(--fb-border); border-radius: var(--fb-radius-lg); background: var(--fb-surface-strong); padding: 1.25rem 1.5rem; box-shadow: var(--fb-shadow-soft); }
-      .card { border: 1px solid var(--fb-border); border-radius: var(--fb-radius-lg); background: var(--fb-surface-strong); padding: 1.25rem; display: grid; gap: .9rem; box-shadow: var(--fb-shadow-soft); }
-      .card h2 { margin: 0; font-size: 1.15rem; font-weight: 800; color: var(--fb-text); }
-      .filters { display: grid; grid-template-columns: 1fr 1fr auto; gap: .6rem; align-items: start; }
-      .filters mat-form-field { width: 100%; }
-      .filter-submit { margin-top: 8px; height: fit-content; }
-      .resource-list, .path-list, .tool-list, .admin-list { display: grid; gap: .7rem; }
-      .resource, .path, .tool-item, .admin-row { border: 1px solid var(--fb-border); border-radius: var(--fb-radius-md); background: var(--fb-bg); padding: .85rem; display: grid; gap: .35rem; }
-      .resource p, .path p, .tool-item p, .admin-row p { margin: 0; color: var(--fb-muted); }
-      .resource-image { width: 100%; max-height: 180px; object-fit: cover; border-radius: var(--fb-radius-sm); }
-      .resource-header, .admin-row-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-      .resource-meta, .admin-row-meta { display: flex; flex-wrap: wrap; gap: .6rem; color: var(--fb-muted); font-size: 12px; align-items: center; }
-      .resource-actions, .admin-row-actions { display: flex; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; }
-      .admin-row-actions { justify-content: flex-start; }
-      .theme-chip { background: var(--fb-primary-soft); color: var(--fb-primary-strong); border-radius: 999px; padding: .25rem .6rem; font-size: 11px; font-weight: 600; }
-      .status { margin: 0; color: var(--fb-success); font-weight: 600; }
-      .hint { margin: 0; color: var(--fb-muted); font-size: 13px; }
-      .path-top { display: flex; align-items: start; justify-content: space-between; gap: .5rem; }
-      .badge { background: rgba(var(--fb-accent-rgb),.12); color: var(--fb-accent-strong); border-radius: 999px; padding: .2rem .55rem; font-size: 12px; font-weight: 600; }
-      .steps { display: grid; gap: .45rem; }
-      .steps button { text-align: left; justify-content: flex-start; gap: 6px; }
-      .steps button[disabled] { color: var(--fb-success); border-color: rgba(var(--fb-success-rgb),.3); background: rgba(var(--fb-success-rgb),.06); opacity: 1; }
-      .steps button mat-icon { color: var(--fb-success); }
-      .tool-forms { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .8rem; }
-      .tool-forms form { border: 1px solid var(--fb-border); border-radius: var(--fb-radius-md); padding: .85rem; display: grid; gap: .25rem; background: var(--fb-bg); }
-      .tool-forms mat-form-field { width: 100%; }
-      .tool-forms h3 { margin: 0 0 .35rem; font-size: 1rem; font-weight: 700; color: var(--fb-text); }
-      .date-row { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
-      .tool-activities { display: flex; flex-wrap: wrap; gap: .35rem; }
-      .newsletter ul { margin: .35rem 0 .35rem 1.1rem; }
+      :host { display: block; }
+      .edu-shell { display: grid; gap: 24px; }
+      .edu-shell > app-page-header { display: block; margin-bottom: -8px; }
+      .card {
+        display: grid;
+        gap: 16px;
+        padding: clamp(20px, 3vw, 28px);
+        border-radius: var(--fb-radius-md);
+        background: var(--fb-surface);
+        box-shadow: var(--fb-elev-1);
+        min-width: 0;
+      }
+      .card > button { justify-self: start; }
+      .card h2 { margin: 0; font-family: var(--fb-font-sans); font-variation-settings: normal; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+      .hint { margin: 0; color: var(--fb-text-mid); font-size: 14px; }
       .empty { margin: 0; color: var(--fb-muted); }
-      .error { margin: 0; color: var(--fb-danger); font-weight: 600; }
-      .child-context-banner { display: flex; align-items: center; gap: .6rem; background: var(--fb-primary-soft); border: 1px solid rgba(var(--fb-primary-rgb),.2); border-radius: var(--fb-radius-md); padding: .7rem .9rem; }
-      .child-context-banner p { flex: 1; margin: 0; color: var(--fb-text); }
-      .child-context-banner mat-icon { color: var(--fb-primary); }
 
-      /* Formulaire admin */
-      .resource-form { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .7rem .9rem; }
+      .child-context-banner {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 12px 16px;
+        border-radius: var(--fb-radius-sm);
+        background: var(--fb-primary-tint);
+        color: var(--fb-primary-strong);
+      }
+      .child-context-banner p { flex: 1; min-width: 200px; margin: 0; }
+
+      /* Filtres */
+      .filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 12px; align-items: start; }
+      .filters mat-form-field { width: 100%; }
+      .filter-submit { margin-top: 6px; }
+
+      /* Bibliothèque */
+      .resource-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+      .resource {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 18px;
+        border: 1px solid var(--fb-border);
+        border-radius: var(--fb-radius-md);
+        background: var(--fb-surface);
+        transition: transform 0.35s var(--fb-ease), box-shadow 0.35s var(--fb-ease);
+      }
+      .resource:hover { transform: translateY(-3px); box-shadow: var(--fb-elev-2); }
+      .resource p { flex: 1; margin: 0; color: var(--fb-text-mid); font-size: 14px; line-height: 1.5; }
+      .resource-image { width: calc(100% + 36px); margin: -18px -18px 4px; height: 160px; object-fit: cover; border-radius: var(--fb-radius-md) var(--fb-radius-md) 0 0; }
+      .resource-header { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
+      .resource-header strong { font-size: 16px; line-height: 1.3; }
+      .resource-meta { display: flex; gap: 12px; color: var(--fb-muted); font-size: 12.5px; }
+      .resource-actions { padding-top: 10px; border-top: 1px solid var(--fb-border); }
+
+      .theme-chip {
+        display: inline-flex;
+        padding: 3px 10px;
+        border-radius: var(--fb-radius-pill);
+        background: var(--fb-primary-soft);
+        color: var(--fb-primary-strong);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      /* Parcours */
+      .path-list, .tool-list, .admin-list { display: grid; gap: 12px; }
+      .path, .tool-item, .admin-row {
+        display: grid;
+        gap: 8px;
+        padding: 16px;
+        border-radius: var(--fb-radius-sm);
+        background: var(--fb-surface-alt);
+      }
+      .path p, .tool-item p, .admin-row p { margin: 0; color: var(--fb-text-mid); font-size: 14px; }
+      .path-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+      .badge {
+        padding: 3px 10px;
+        border-radius: var(--fb-radius-pill);
+        background: var(--fb-accent-soft);
+        color: var(--fb-warning-ink);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+      .steps button { height: auto; min-height: 44px; padding: 8px 16px; justify-content: flex-start; gap: 6px; text-align: left; white-space: normal; line-height: 1.3; }
+      .steps button[disabled] { color: var(--fb-success-ink); border-color: rgba(var(--fb-success-rgb), 0.3); background: rgba(var(--fb-success-rgb), 0.08); opacity: 1; }
+      .steps button mat-icon { color: var(--fb-success); }
+
+      /* Boîte à outils */
+      .tool-forms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      .tool-forms form { display: grid; gap: 4px; align-content: start; padding: 18px; border: 1px solid var(--fb-border); border-radius: var(--fb-radius-md); }
+      .tool-forms mat-form-field { width: 100%; }
+      .tool-forms h3 { margin: 0 0 8px; font-size: 15.5px; font-weight: 700; }
+      .date-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .tool-activities { display: flex; flex-wrap: wrap; gap: 6px; }
+      .tool-item small, .admin-row small { color: var(--fb-muted); font-size: 12.5px; }
+
+      /* Newsletter */
+      .newsletter { padding: 18px 20px; border-radius: var(--fb-radius-sm); background: var(--fb-surface-alt); }
+      .newsletter h3 { margin: 0 0 8px; font-size: 16px; }
+      .newsletter p { margin: 0 0 6px; color: var(--fb-text-mid); }
+      .newsletter ul { margin: 8px 0; padding-left: 20px; }
+      .newsletter small { color: var(--fb-muted); }
+
+      /* Administration */
+      .resource-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; }
       .resource-form mat-form-field { width: 100%; }
       .resource-form .full { grid-column: 1 / -1; }
-      .file-field { display: grid; gap: .3rem; align-content: start; }
-      .file-field .field-label { font-size: 13px; font-weight: 600; color: var(--fb-text); }
-      .file-field small { color: var(--fb-muted); font-size: 12px; }
-      .form-actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+      .file-field { display: grid; gap: 6px; align-content: start; padding-bottom: 16px; }
+      .file-field .field-label { font-size: 13px; font-weight: 600; }
+      .file-field small { color: var(--fb-muted); font-size: 12.5px; }
+      .form-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+      .admin-row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .admin-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+      .admin-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      .status-pill { padding: 3px 10px; border-radius: var(--fb-radius-pill); font-size: 12px; font-weight: 700; }
+      .status-pill[data-status="published"] { background: rgba(var(--fb-success-rgb), 0.1); color: var(--fb-success-ink); }
+      .status-pill[data-status="draft"] { background: var(--fb-accent-soft); color: var(--fb-warning-ink); }
+      .danger-action { color: var(--fb-danger) !important; border-color: rgba(var(--fb-danger-rgb), 0.35) !important; }
 
-      /* Table admin */
-      .status-pill { border-radius: 999px; padding: .2rem .6rem; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
-      .status-pill[data-status="published"] { background: rgba(var(--fb-success-rgb),.12); color: var(--fb-success); }
-      .status-pill[data-status="draft"] { background: rgba(var(--fb-warning-rgb),.14); color: var(--fb-warning); }
-      .danger-action { color: var(--fb-danger) !important; border-color: rgba(var(--fb-danger-rgb),.35) !important; }
-
-      /* Confirmation de suppression */
-      .confirm-overlay { position: fixed; inset: 0; background: var(--fb-overlay); display: grid; place-items: center; z-index: 1000; padding: 1rem; }
-      .confirm-box { background: var(--fb-surface-strong); border-radius: var(--fb-radius-lg); padding: 1.5rem; max-width: 420px; width: 100%; box-shadow: var(--fb-shadow); display: grid; gap: .7rem; }
-      .confirm-box h3 { margin: 0; color: var(--fb-text); }
-      .confirm-box p { margin: 0; color: var(--fb-muted); }
-      .confirm-actions { display: flex; justify-content: flex-end; gap: .6rem; }
+      /* Confirmation de suppression (fenêtre .fb-modal partagée) */
+      .confirm-box { display: grid; gap: 12px; max-width: 440px; }
+      .confirm-box h3 { margin: 0; font-size: 18px; }
+      .confirm-box p { margin: 0; color: var(--fb-text-mid); }
+      .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 
       @media (max-width: 768px) {
-        .hero { flex-direction: column; align-items: stretch; }
-        .filters { grid-template-columns: 1fr; }
-        .tool-forms { grid-template-columns: 1fr; }
-        .resource-form { grid-template-columns: 1fr; }
+        .filters, .tool-forms, .resource-form { grid-template-columns: minmax(0, 1fr); }
+        .filter-submit { margin-top: 0; }
       }
     `,
   ],

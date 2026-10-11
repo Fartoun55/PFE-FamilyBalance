@@ -1,0 +1,91 @@
+@startuml seq-gestion-specialistes
+!include ../_style.iuml
+title Diagramme de séquence — Ajout, modification et suppression d'un spécialiste (administrateur)
+autonumber "<b>[0]"
+skinparam maxMessageSize 220
+
+actor "Administrateur" as A
+box "Frontend Angular" #F7F9FD
+  participant "SpecialistsAdminPage /\nSpecialistFormComponent" as Page
+  participant "SpecialistAdminService\n(frontend)" as FSvc
+end box
+box "Backend Node.js / Express" #FFFBEB
+  participant "protect +\nauthorizeRoles('admin')" as MW
+  participant "SpecialistAdmin\nController" as Ctrl
+  participant "SpecialistAdmin\nService" as Svc
+  participant "AccountCleanup\nService" as Clean
+end box
+database "MongoDB" as DB
+
+== Ajout d'un spécialiste ==
+A -> Page : remplit le formulaire\n(identité, profil, disponibilités, mot de passe)
+Page -> Page : validation du formulaire réactif
+alt champs invalides côté client
+  Page --> A : erreurs affichées sous les champs
+else formulaire valide
+  Page -> FSvc : create(payload)
+  FSvc -> MW : POST /api/admin/specialists
+  MW -> MW : vérifie le JWT et le rôle
+  alt non administrateur
+    MW --> Page : 403 « Accès refusé pour ce rôle »
+  else administrateur
+    MW -> Ctrl : create(req)
+    Ctrl -> Svc : createSpecialist(body)
+    Svc -> Svc : parseInput() — validation par champ
+    alt données invalides
+      Svc --> Page : 400 { message, errors: { champ: message } }
+    else
+      Svc -> DB : User.exists(email) ; User.exists(licenseNumber)
+      alt e-mail ou licence déjà utilisés
+        Svc --> Page : 409 { errors: { email | licenseNumber } }
+        Page --> A : erreur sous le champ concerné
+      else unique
+        Svc -> DB : User.create(role: specialist, passwordHash bcrypt)
+        Svc -> DB : TeleconsultationSpecialistProfile créé et\nsynchronisé (bio, langues, disponibilités)
+        Svc -> DB : relecture + statistiques de rendez-vous
+        Svc --> Ctrl : spécialiste
+        Ctrl --> FSvc : 201 { message, specialist }
+        FSvc --> Page : succès
+        Page -> FSvc : list() — rafraîchissement
+        Page --> A : notification « Spécialiste créé avec succès »
+      end
+    end
+  end
+end
+
+== Modification ==
+A -> Page : ouvre le formulaire prérempli et modifie
+Page -> FSvc : update(id, payload)
+FSvc -> Ctrl : PATCH /api/admin/specialists/:id (via protect + admin)
+Ctrl -> Svc : updateSpecialist(id, body, admin)
+Svc -> DB : User.findOne({ _id, role: 'specialist' })
+alt introuvable
+  Svc --> Page : 404 « Spécialiste introuvable »
+else trouvé
+  Svc -> DB : contrôles d'unicité (e-mail, licence)
+  Svc -> DB : user.save()
+  Svc -> DB : syncDirectoryProfile() — nom, spécialité, tarif,\nville, langues, visibilité (isActive), bio, disponibilités
+  Svc --> Page : 200 { specialist }
+  Page --> A : « Spécialiste mis à jour avec succès » + liste rafraîchie
+end
+
+== Suppression ==
+A -> Page : clique sur « Supprimer »
+Page --> A : boîte de confirmation (rendez-vous à venir affichés)
+A -> Page : confirme
+Page -> FSvc : remove(id)
+FSvc -> Ctrl : DELETE /api/admin/specialists/:id (via protect + admin)
+Ctrl -> Svc : deleteSpecialist(id)
+Svc -> Clean : countUpcomingSpecialistAppointments(id)
+Clean -> DB : count rendez-vous actifs à venir
+alt rendez-vous à venir > 0
+  Svc --> Page : 409 « Suppression impossible : N rendez-vous à venir »
+  Page --> A : proposition « Désactiver le compte » (PATCH isActive = false)
+else aucun rendez-vous à venir
+  Svc -> Clean : wipeUserData(id)
+  Clean -> DB : suppression rendez-vous, messages, fiche d'annuaire,\nnotifications, jetons…
+  Svc -> DB : user.deleteOne()
+  Svc --> Page : 200 « Spécialiste supprimé avec succès »
+  Page --> A : notification + liste rafraîchie
+end
+@enduml

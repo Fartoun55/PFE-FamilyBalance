@@ -13,10 +13,18 @@ const {
   exportAccountsToWord,
   exportAccountsToPDF,
 } = require('../controllers/adminController');
+const specialists = require('../controllers/specialistAdminController');
 
 const router = express.Router();
 
+// Toutes les routes d'administration (dont la gestion des spécialistes) : administrateur uniquement.
 router.use(protect, authorizeRoles('admin'));
+
+router.get('/specialists', specialists.list);
+router.post('/specialists', specialists.create);
+router.get('/specialists/:id', specialists.detail);
+router.patch('/specialists/:id', specialists.update);
+router.delete('/specialists/:id', specialists.remove);
 
 router.get('/accounts', listAccounts);
 router.post('/accounts', createAccount);

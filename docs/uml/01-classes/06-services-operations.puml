@@ -1,0 +1,119 @@
+@startuml services-operations
+!include ../_style.iuml
+title Diagramme de classes — Couche service du backend\n(opérations métier réelles et dépendances)
+hide empty attributes
+skinparam class {
+  HeaderBackgroundColor #FDEFD6
+  BorderColor #B45A00
+}
+
+class AuthService <<service>> {
+  + registerUser(payload, meta)
+  + verifyEmailToken(token, meta)
+  + loginUser(email, password, meta)
+  + verifyMfaChallenge(token, code, meta)
+  + refreshSession(refreshToken, meta)
+  + revokeRefreshToken(refreshToken)
+  + requestPasswordReset(email)
+  + resetPassword(token, newPassword)
+  + changePassword(userId, current, new)
+  + createAdolescentForParent(parentId, payload)
+  + getLinkedAdolescentsForParent(parentId)
+}
+
+class SurveyService <<service>> {
+  + buildCatalog(ageSegment)
+  + startOrResumeSurvey(actor, domain, age)
+  + saveSurveyAnswer(sessionId, actor, answer, advance)
+  + completeSurvey(sessionId, actor)
+  + getSessionForActor(sessionId, actor)
+  + resolveSurveyActor(actor, childId, age)
+}
+
+class ScoringService <<service>> {
+  + calculateAndStoreScore(actor, sessionId, trigger)
+  + getLatestScoringResult(actor, childId)
+  + getScoringHistory(actor, childId)
+  - createOrUpdateRiskAlert(userId, score, level)
+}
+
+class TeleconsultationService <<service>> {
+  + getDirectory(filters)
+  + getSlotsForSpecialist(profileId, date)
+  + createAppointment(patient, payload)
+  + rescheduleAppointment(id, user, payload)
+  + cancelAppointment(id, user)
+  + shareBilanWithSpecialist(patient, id)
+  + getSpecialistDashboard(specialistId)
+  + getAppointmentMessages(id, user)
+  + sendAppointmentMessage(id, user, payload)
+  + ensureSpecialistProfileForUser(user)
+}
+
+class NotificationService <<service>> {
+  + createNotification(userId, payload)
+  + listNotifications(user, options)
+  + getUnreadCount(user)
+  + markAsRead(user, id)
+  + markAllAsRead(user)
+  + deleteNotification(user, id)
+  + syncReminders(user)
+  + notifyAppointmentCreated(appt, patient)
+  + notifyAppointmentChanged(appt, actor, change)
+  + notifyMessageReceived(appt, sender, recipientId, msg)
+  + notifyScoreStored(score, alert, actor)
+  + notifyResourcePublished(resource)
+}
+
+class SpecialistAdminService <<service>> {
+  + listSpecialists(filters)
+  + getSpecialist(id)
+  + createSpecialist(body)
+  + updateSpecialist(id, body, admin)
+  + deleteSpecialist(id)
+  + syncDirectoryProfile(user, extras)
+}
+
+class AccountCleanupService <<service>> {
+  + wipeUserData(userId)
+  + countUpcomingSpecialistAppointments(id)
+}
+
+class EducationService <<service>> {
+  + getResourceLibrary(age, category, search)
+  + createResource(admin, body, file)
+  + updateResource(id, body, file)
+  + setResourceStatus(id, status)
+  + deleteResource(id)
+  + getLearningPaths(user)
+  + completeLearningStep(user, pathId, stepId)
+  + createDigitalContract(user, payload)
+  + createActivitySchedule(user, payload)
+  + generateNewsletterPreview(user)
+}
+
+class FamilyDashboardService <<service>> {
+  + getFamilyDashboardOverview(parentId)
+  - buildChildDashboard(child)
+}
+
+class RealtimeGateway <<Socket.IO>> {
+  + initRealtime(httpServer)
+  + emitToUser(userId, event, payload)
+}
+
+class MailService <<service>> {
+  + sendEmailVerificationEmail()
+  + sendMfaCodeEmail()
+  + sendResetPasswordEmail()
+}
+
+AuthService ..> MailService
+ScoringService ..> SurveyService : getSessionForActor
+ScoringService ..> NotificationService : notifyScoreStored
+TeleconsultationService ..> NotificationService : notify*
+EducationService ..> NotificationService : notifyResourcePublished
+SpecialistAdminService ..> TeleconsultationService : ensureSpecialistProfileForUser
+SpecialistAdminService ..> AccountCleanupService
+NotificationService ..> RealtimeGateway : emitToUser
+@enduml

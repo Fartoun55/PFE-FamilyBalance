@@ -8,9 +8,8 @@ import { MatInputModule } from '@angular/material/input';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatNativeDateModule } from '@angular/material/core';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatCardModule } from '@angular/material/card';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatIconModule } from '@angular/material/icon';
 import { AdolescentService } from '../services/adolescent.service';
 
@@ -26,9 +25,8 @@ import { AdolescentService } from '../services/adolescent.service';
     MatDatepickerModule,
     MatNativeDateModule,
     MatCheckboxModule,
-    MatCardModule,
+    PageHeaderComponent,
     MatSnackBarModule,
-    MatProgressSpinnerModule,
     MatIconModule,
   ],
   templateUrl: './add-adolescent.page.html',
@@ -133,8 +131,8 @@ export class AddAdolescentPage implements OnInit {
   }
 
   getPasswordStrengthColor(): string {
-    const colors = ['#c0392b', '#c9622f', '#b7791f', '#7a9a3d', '#157f45'];
-    return colors[this.passwordStrength - 1] || '#c0392b';
+    const colors = ['#b91c1c', '#c2410c', '#b45a00', '#4d7c0f', '#0f8a63'];
+    return colors[this.passwordStrength - 1] || '#b91c1c';
   }
 
   onSubmit(): void {

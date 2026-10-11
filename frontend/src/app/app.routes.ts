@@ -16,6 +16,7 @@ import { AdolescentDashboardPage } from './features/dashboard/pages/adolescent-d
 import { EducationSpacePage } from './features/education/pages/education-space.page';
 import { TeleconsultationPage } from './features/teleconsultation/pages/teleconsultation.page';
 import ShellLayoutComponent from './core/layout/shell-layout.component';
+import { SpecialistsAdminPage } from './features/admin/pages/specialists-admin.page';
 
 export const routes: Routes = [
 	{ path: '', pathMatch: 'full', redirectTo: 'auth/login' },
@@ -26,12 +27,12 @@ export const routes: Routes = [
 	{ path: 'auth/mfa', component: MfaVerifyPage, canActivate: [guestGuard] },
 	{ path: 'auth/reset-password', component: ResetPasswordPage, canActivate: [guestGuard] },
 	{ path: 'reset-password', component: ResetPasswordPage, canActivate: [guestGuard] },
-	{ path: 'auth/profile', component: ProfilePage, canActivate: [authGuard] },
 	{
 		path: '',
 		component: ShellLayoutComponent,
 		canActivate: [authGuard],
-	    children: [
+		children: [
+			{ path: 'auth/profile', component: ProfilePage },
 			{ path: 'survey/dynamic', component: DynamicSurveyPage },
 			{ path: 'family/dashboard', component: FamilyDashboardPage },
 			{ path: 'family/add-adolescent', component: AddAdolescentPage },
@@ -40,7 +41,8 @@ export const routes: Routes = [
 			{ path: 'teleconsultation', component: TeleconsultationPage },
 			{ path: 'scoring/results', component: ScoringDashboardPage },
 			{ path: 'admin/dashboard', component: AdminDashboardPage, canActivate: [adminGuard] },
+			{ path: 'admin/specialists', component: SpecialistsAdminPage, canActivate: [adminGuard] },
 		],
 	},
-		{ path: '**', redirectTo: 'auth/login' },
+	{ path: '**', redirectTo: 'auth/login' },
 ];

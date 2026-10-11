@@ -43,12 +43,16 @@ export interface TeleconsultationAppointment {
     firstName: string;
     lastName: string;
     email: string;
+    role?: string;
   };
 }
 
 export interface TeleconsultationMessage {
   _id: string;
   sender: string;
+  /** Identité de l'expéditeur, fournie par l'API pour distinguer les messages de chacun. */
+  senderName?: string;
+  senderRole?: string;
   recipient: string;
   messageType: 'pre' | 'post';
   content: string;

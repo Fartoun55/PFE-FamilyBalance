@@ -1,198 +1,140 @@
-<div class="dashboard-container">
-  <!-- Header -->
-  <div class="dashboard-header">
-    <div class="header-content">
-      <h1>Mon Espace FamilyBalance</h1>
-      <p class="subtitle">Bienvenue {{ dashboard()?.adolescent?.firstName }}! Voici ton suivi personnalisé.</p>
-    </div>
-    <div class="header-actions">
-      <button mat-raised-button color="primary" (click)="loadDashboard()" matTooltip="Actualiser" aria-label="Actualiser le tableau de bord">
-        <mat-icon>refresh</mat-icon>
-      </button>
-    </div>
+<app-page-header
+  eyebrow="Mon espace"
+  [title]="dashboard()?.adolescent?.firstName ? 'Salut ' + dashboard()?.adolescent?.firstName + ' !' : 'Mon espace FamilyBalance'"
+  subtitle="Ton suivi personnalisé : évaluations, résultats et ressources choisies pour ton âge."
+  illustration="teen-space"
+>
+  <button class="fb-btn fb-btn--ghost" type="button" (click)="loadDashboard()" [disabled]="loading()" aria-label="Actualiser le tableau de bord">
+    <mat-icon>refresh</mat-icon>
+    Actualiser
+  </button>
+</app-page-header>
+
+<div class="fb-alert fb-alert--error block" role="alert" *ngIf="errorMessage()">
+  <mat-icon>error_outline</mat-icon>
+  <span>{{ errorMessage() }}</span>
+</div>
+
+<div class="fb-loading" *ngIf="loading() && !dashboard()">
+  <span class="fb-spinner"></span>
+  Chargement de ton espace…
+</div>
+
+<ng-container *ngIf="dashboard() as data">
+  <div class="kpi-row">
+    <app-stat-card icon="assignment_turned_in" label="Évaluations complétées" [value]="data.stats.totalSurveys || 0" tone="primary"></app-stat-card>
+    <app-stat-card
+      icon="insights"
+      label="Score moyen"
+      [value]="data.stats.averageScore ? (data.stats.averageScore | number:'1.0-1') + '/100' : '—'"
+      tone="accent"
+    ></app-stat-card>
+    <app-stat-card [icon]="riskIcon()" label="Niveau actuel" [value]="getRiskLevelLabel()" [tone]="riskTone()"></app-stat-card>
   </div>
 
-  <!-- Error Message -->
-  <div class="error-alert" *ngIf="errorMessage()">
-    <mat-icon>error_outline</mat-icon>
-    <span>{{ errorMessage() }}</span>
-  </div>
+  <div class="grid">
+    <!-- Dernier bilan -->
+    <section class="fb-card next-step">
+      <span class="fb-eyebrow">Mon dernier bilan</span>
+      <ng-container *ngIf="data.stats.lastSurveyDate; else noSurvey">
+        <h2>Évaluation du {{ data.stats.lastSurveyDate | date: 'dd/MM/yyyy' }}</h2>
+        <p>Refais le point régulièrement pour voir comment tu progresses.</p>
+        <div class="actions">
+          <button class="fb-btn fb-btn--accent" type="button" (click)="goToSurvey()">
+            <mat-icon>replay</mat-icon>
+            Refaire une évaluation
+          </button>
+          <button class="fb-btn fb-btn--ghost" type="button" (click)="goToScoring()">
+            <mat-icon>insights</mat-icon>
+            Voir mes résultats
+          </button>
+        </div>
+      </ng-container>
+      <ng-template #noSurvey>
+        <h2>Prêt(e) pour ta première évaluation ?</h2>
+        <p>Quelques questions sur ton rapport aux écrans : il n'y a pas de bonne ou de mauvaise réponse.</p>
+        <div class="actions">
+          <button class="fb-btn fb-btn--accent" type="button" (click)="goToSurvey()">
+            <mat-icon>play_arrow</mat-icon>
+            Commencer une évaluation
+          </button>
+        </div>
+      </ng-template>
+    </section>
 
-  <!-- Main Grid -->
-  <div class="dashboard-grid">
-    <!-- Stats Cards -->
-    <div class="stats-section">
-      <mat-card class="stat-card">
-        <mat-card-content>
-          <div class="stat-icon surveys">
-            <mat-icon>assessment</mat-icon>
-          </div>
-          <div class="stat-info">
-            <p class="stat-value">{{ dashboard()?.stats?.totalSurveys || 0 }}</p>
-            <p>Évaluations complétées</p>
-          </div>
-        </mat-card-content>
-      </mat-card>
-
-      <mat-card class="stat-card">
-        <mat-card-content>
-          <div class="stat-icon score">
-            <mat-icon>trending_up</mat-icon>
-          </div>
-          <div class="stat-info">
-            <p class="stat-value">{{ dashboard()?.stats?.averageScore?.toFixed(1) || '—' }}/100</p>
-            <p>Score moyen</p>
-          </div>
-        </mat-card-content>
-      </mat-card>
-
-      <mat-card class="stat-card" [style.border-left-color]="getRiskLevelColor()">
-        <mat-card-content>
-          <div class="stat-icon risk" [style.background-color]="getRiskLevelColor()">
-            <mat-icon *ngIf="getRiskLevelLabel() === 'Équilibre sain'">check_circle</mat-icon>
-            <mat-icon *ngIf="getRiskLevelLabel() === 'Vigilance légère'">info</mat-icon>
-            <mat-icon *ngIf="getRiskLevelLabel() !== 'Équilibre sain' && getRiskLevelLabel() !== 'Vigilance légère'">warning</mat-icon>
-          </div>
-          <div class="stat-info">
-            <p class="stat-value">{{ getRiskLevelLabel() }}</p>
-            <p>Niveau de risque</p>
-          </div>
-        </mat-card-content>
-      </mat-card>
-    </div>
-
-    <!-- Coach advice -->
-    <div class="coach-card" *ngIf="dashboard()?.latestScore?.recommendations?.length">
-      <div class="coach-icon">
-        <mat-icon>tips_and_updates</mat-icon>
-      </div>
+    <!-- Conseil -->
+    <section class="coach" *ngIf="data.latestScore?.recommendations?.length">
+      <mat-icon>tips_and_updates</mat-icon>
       <div class="coach-body">
-        <span class="coach-eyebrow">Conseil de ton coach FamilyBalance</span>
-        <p>{{ dashboard()!.latestScore.recommendations[0] }}</p>
-        <details class="coach-more" *ngIf="dashboard()!.latestScore.recommendations.length > 1">
-          <summary>Voir {{ dashboard()!.latestScore.recommendations.length - 1 }} conseil(s) de plus</summary>
+        <span class="fb-eyebrow">Le conseil de ton coach</span>
+        <p>{{ data.latestScore.recommendations[0] }}</p>
+        <details *ngIf="data.latestScore.recommendations.length > 1">
+          <summary>Voir {{ data.latestScore.recommendations.length - 1 }} conseil(s) de plus</summary>
           <ul>
-            <li *ngFor="let tip of dashboard()!.latestScore.recommendations.slice(1)">{{ tip }}</li>
+            <li *ngFor="let tip of data.latestScore.recommendations.slice(1)">{{ tip }}</li>
           </ul>
         </details>
       </div>
-    </div>
+    </section>
 
-    <!-- Last Survey -->
-    <div class="section">
-      <h2>Dernier Bilan</h2>
-      <mat-card class="info-card">
-        <mat-card-content>
-          <div *ngIf="dashboard()?.stats?.lastSurveyDate; else noSurvey">
-            <p class="label">Dernière évaluation</p>
-            <p class="value">
-              {{ (dashboard()?.stats?.lastSurveyDate | date: 'dd/MM/yyyy à HH:mm') || '—' }}
-            </p>
-            <button mat-raised-button color="primary" (click)="goToSurvey()" class="full-width">
-              <mat-icon>edit</mat-icon>
-              Refaire une évaluation
-            </button>
-          </div>
-          <ng-template #noSurvey>
-            <p class="no-data">Tu n'as pas encore fait d'évaluation.</p>
-            <button mat-raised-button color="primary" (click)="goToSurvey()" class="full-width">
-              <mat-icon>edit</mat-icon>
-              Commencer une évaluation
-            </button>
-          </ng-template>
-          <button mat-stroked-button color="primary" (click)="goToScoring()" class="full-width">
-            <mat-icon>insights</mat-icon>
-            Voir mes résultats détaillés
-          </button>
-        </mat-card-content>
-      </mat-card>
-    </div>
-
-    <!-- Recent Scores -->
-    <div class="section" *ngIf="dashboard()?.recentScores && dashboard()?.recentScores!.length > 0">
-      <h2>Historique des Scores</h2>
-      <mat-card class="info-card">
-        <mat-card-content>
-          <div class="scores-list">
-            <div class="score-item" *ngFor="let score of dashboard()?.recentScores">
-              <div class="score-date">
-                {{ score.createdAt | date: 'dd/MM/yyyy' }}
-              </div>
-              <div class="score-value">
-                <div class="score-progress">
-                  <mat-progress-bar
-                    mode="determinate"
-                    [value]="score.globalScore || 0"
-                    [color]="score.globalScore < 50 ? 'primary' : score.globalScore < 75 ? 'accent' : 'warn'"
-                  ></mat-progress-bar>
-                </div>
-                <span class="score-text">{{ score.globalScore }}/100</span>
-              </div>
-            </div>
-          </div>
-        </mat-card-content>
-      </mat-card>
-    </div>
-
-    <!-- Resources Section -->
-    <div class="section full-width">
-      <div class="section-header">
-        <h2>Ressources Éducatives</h2>
-        <button mat-stroked-button color="primary" (click)="goToResources()">
-          <mat-icon>menu_book</mat-icon>
-          Voir toutes les ressources
-        </button>
-      </div>
-      <div class="resources-grid" *ngIf="resources().length; else noResources">
-        <mat-card class="resource-card" *ngFor="let resource of resources()">
-          <mat-card-header>
-            <mat-icon class="resource-icon">menu_book</mat-icon>
-            <mat-card-title>{{ resource.title }}</mat-card-title>
-          </mat-card-header>
-          <mat-card-content>
-            <p class="description">{{ resource.description }}</p>
-            <div class="resource-meta">
-              <span class="meta-item">
-                <mat-icon>schedule</mat-icon> {{ resource.estimatedMinutes }} min
-              </span>
-              <span class="meta-item">
-                <mat-icon>label</mat-icon> {{ resource.category }}
-              </span>
-            </div>
-          </mat-card-content>
-          <mat-card-actions>
-            <button mat-button color="primary" (click)="viewResource(resource)">
-              Lire l'article
-            </button>
-          </mat-card-actions>
-        </mat-card>
-      </div>
-      <ng-template #noResources>
-        <p class="no-data">Aucune ressource publiée pour ton âge pour le moment.</p>
+    <section class="fb-card">
+      <h2 class="section-title">Historique de mes scores</h2>
+      <ul class="scores" *ngIf="data.recentScores?.length; else noScores">
+        <li *ngFor="let score of data.recentScores">
+          <span class="score-date">{{ score.createdAt | date: 'dd/MM/yyyy' }}</span>
+          <span class="bar" role="img" [attr.aria-label]="'Score ' + score.globalScore + ' sur 100'">
+            <span class="bar-fill" [ngClass]="scoreTone(score.globalScore)" [style.width.%]="score.globalScore || 0"></span>
+          </span>
+          <strong class="score-text">{{ score.globalScore }}/100</strong>
+        </li>
+      </ul>
+      <ng-template #noScores>
+        <p class="muted">Tes scores apparaîtront ici après ta première évaluation.</p>
       </ng-template>
-    </div>
+    </section>
 
-    <!-- Parent Contact -->
-    <div class="section full-width">
-      <h2>Mon Parent</h2>
-      <mat-card class="info-card">
-        <mat-card-content>
-          <div class="parent-info">
-            <div class="parent-avatar">
-              <mat-icon>person</mat-icon>
-            </div>
-            <div class="parent-details">
-              <h3>{{ dashboard()?.parent?.firstName }} {{ dashboard()?.parent?.lastName }}</h3>
-              <p>{{ dashboard()?.parent?.email }}</p>
-              <p class="subtitle">Ton parent responsable</p>
-            </div>
-            <button mat-raised-button (click)="contactParent()">
-              <mat-icon>mail</mat-icon>
-              Contacter
-            </button>
-          </div>
-        </mat-card-content>
-      </mat-card>
-    </div>
+    <!-- Parent -->
+    <section class="fb-card parent">
+      <span class="parent-avatar" aria-hidden="true"><mat-icon>family_restroom</mat-icon></span>
+      <div class="parent-details">
+        <span class="label">Mon parent responsable</span>
+        <strong>{{ data.parent.firstName }} {{ data.parent.lastName }}</strong>
+        <small>{{ data.parent.email }}</small>
+      </div>
+      <button class="fb-btn fb-btn--soft fb-btn--sm" type="button" (click)="contactParent()">
+        <mat-icon>mail</mat-icon>
+        Contacter
+      </button>
+    </section>
   </div>
-</div>
+
+  <!-- Ressources -->
+  <section class="resources">
+    <div class="section-head">
+      <h2 class="section-title">Ressources pour toi</h2>
+      <button class="fb-btn fb-btn--ghost fb-btn--sm" type="button" (click)="goToResources()">
+        Tout voir
+        <mat-icon>arrow_forward</mat-icon>
+      </button>
+    </div>
+    <div class="resources-grid" *ngIf="resources().length; else noResources">
+      <article class="fb-card fb-card--interactive resource" *ngFor="let resource of resources()">
+        <span class="fb-badge fb-badge--neutral">{{ resource.category }}</span>
+        <h3>{{ resource.title }}</h3>
+        <p>{{ resource.description }}</p>
+        <div class="resource-foot">
+          <span class="meta"><mat-icon>schedule</mat-icon>{{ resource.estimatedMinutes }} min</span>
+          <button class="link-btn" type="button" (click)="viewResource(resource)">
+            Lire
+            <mat-icon>arrow_forward</mat-icon>
+          </button>
+        </div>
+      </article>
+    </div>
+    <ng-template #noResources>
+      <div class="fb-card">
+        <app-empty-state icon="menu_book" illustration="education" title="Rien de publié pour le moment" message="Aucune ressource n'est encore publiée pour ton âge. Reviens bientôt !"></app-empty-state>
+      </div>
+    </ng-template>
+  </section>
+</ng-container>

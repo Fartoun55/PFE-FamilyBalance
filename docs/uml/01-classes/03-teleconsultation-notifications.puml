@@ -1,0 +1,103 @@
+@startuml teleconsultation-notifications
+!include ../_style.iuml
+title Diagramme de classes — Téléconsultation, messagerie et notifications
+hide empty methods
+
+class User {
+  + firstName : String
+  + lastName : String
+  + email : String {unique}
+  + role : Role
+  + isActive : Boolean
+}
+
+class TeleconsultationSpecialistProfile {
+  + displayName : String
+  + email : String
+  + specialization : String
+  + languages : String[*]
+  + tariff : Number {>= 0}
+  + city : String
+  + bio : String
+  + isActive : Boolean
+  + averageRating : Number {0..5}
+  --
+  {fiche d'annuaire synchronisée
+   avec le compte du spécialiste}
+}
+
+class AvailabilityRule <<sous-document>> {
+  + dayOfWeek : Number {0..6}
+  + startTime : String {HH:MM}
+  + endTime : String {HH:MM}
+  + slotDurationMinutes : Number {10..120}
+  + active : Boolean
+}
+
+class TeleconsultationAppointment {
+  + reason : String
+  + consultationMode : ConsultationMode
+  + status : AppointmentStatus
+  + slotStart : Date
+  + slotEnd : Date
+  + meetingProvider : MeetingProvider
+  + roomSlug : String {unique}
+  + meetingUrl : String
+  + waitingRoomMessage : String
+  - encryptedAccessSecret : String
+  + bilanShared : Boolean
+  + bilanSharedAt : Date [0..1]
+  --
+  {pas de double réservation : unique
+   (specialistProfile, slotStart) si actif}
+}
+
+class SharedScoreSnapshot <<sous-document>> {
+  + globalScore : Number
+  + riskLevel : RiskLevel
+  + comportemental, emotionnel,
+    social, parental : Number
+  + recommendations : String[*]
+  + ageSegment : String
+  + calculatedAt : Date
+}
+
+class TeleconsultationMessage {
+  - encryptedContent : String
+  - iv : String
+  - authTag : String
+  + messageType : MessageType
+  + createdAt : Date
+  --
+  {contenu chiffré AES-256-GCM,
+   clé dérivée par rendez-vous}
+}
+
+class Notification {
+  + type : NotificationType
+  + title : String {max 140}
+  + message : String {max 500}
+  + link : String
+  + linkParams : Mixed
+  + data : Mixed
+  + dedupeKey : String [0..1]
+  + groupKey : String [0..1]
+  + count : Number = 1
+  + lastEventAt : Date
+  + readAt : Date [0..1]
+  --
+  {unique (user, dedupeKey) ;
+   purge automatique après 180 jours}
+}
+
+User "0..1" -- "0..1" TeleconsultationSpecialistProfile : linkedUser <
+TeleconsultationSpecialistProfile *-- "0..*" AvailabilityRule : availabilityRules
+TeleconsultationSpecialistProfile "1" -- "0..*" TeleconsultationAppointment : specialistProfile <
+User "1" -- "0..*" TeleconsultationAppointment : patient (parent ou adolescent) <
+User "0..1" -- "0..*" TeleconsultationAppointment : specialistUser <
+TeleconsultationAppointment *-- "0..1" SharedScoreSnapshot : sharedScoreSnapshot
+TeleconsultationAppointment "1" o-- "0..*" TeleconsultationMessage : appointment <
+User "1" -- "0..*" TeleconsultationMessage : sender <
+User "1" -- "0..*" TeleconsultationMessage : recipient <
+User "1" -- "0..*" Notification : destinataire <
+@enduml

@@ -3,11 +3,9 @@ import { Component, DestroyRef, OnInit, computed, signal, HostListener } from '@
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatIconModule } from '@angular/material/icon';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -16,6 +14,7 @@ import { SurveyService } from '../../../core/services/survey.service';
 import { ChildContextService } from '../../../core/services/child-context.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { LinkedAdolescentProfile } from '../../../core/models/auth.models';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import {
   SurveyCatalogResponse,
   SurveyQuestion,
@@ -30,1492 +29,531 @@ import {
     CommonModule,
     ReactiveFormsModule,
     RouterLink,
-    MatCardModule,
     MatButtonModule,
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
-    MatProgressSpinnerModule,
     MatTooltipModule,
     MatIconModule,
+    PageHeaderComponent,
   ],
   template: `
-    <section class="survey-shell" [@fadeInOut]>
-      <div class="hero">
-        <div class="hero-top">
-          <div class="eyebrow">Module Survey Adaptatif</div>
-        </div>
-        <h1>Questionnaire Personnalisé</h1>
-        <p>
-          Le questionnaire s'adapte en temps réel à l'âge, au domaine et à vos réponses précédentes pour une meilleure pertinence.
-        </p>
-      </div>
+    <app-page-header
+      eyebrow="Évaluation"
+      title="Questionnaire personnalisé"
+      subtitle="Les questions s'adaptent à l'âge, au domaine choisi et à vos réponses précédentes."
+      illustration="survey"
+    ></app-page-header>
 
-      <div class="child-context-banner" *ngIf="childContext.selectedChildId()" [@fadeIn]>
-        <mat-icon>face</mat-icon>
-        <p>Questionnaire piloté pour <strong>{{ childContext.selectedChildName() }}</strong> — l'âge est déterminé automatiquement à partir de son profil.</p>
-        <button mat-stroked-button type="button" (click)="exitChildContext()">Remplir pour moi-même</button>
-      </div>
+    <div class="child-banner" *ngIf="childContext.selectedChildId()">
+      <mat-icon>face</mat-icon>
+      <p>Questionnaire pour <strong>{{ childContext.selectedChildName() }}</strong> — l'âge est déterminé automatiquement à partir de son profil.</p>
+      <button class="fb-btn fb-btn--ghost fb-btn--sm" type="button" (click)="exitChildContext()">Remplir pour moi-même</button>
+    </div>
 
-      <mat-card class="panel" *ngIf="!session(); else sessionTpl" [@slideIn]>
-        <div class="panel-head">
-          <h2>Configuration du Questionnaire</h2>
-          <p>Renseignez les informations pour démarrer une session adaptée à votre profil.</p>
-        </div>
+    <!-- ── Configuration ─────────────────────────────── -->
+    <div class="setup" *ngIf="!session(); else sessionTpl">
+      <section class="fb-card fb-card--lg step">
+        <header class="step-head">
+          <span class="step-num">1</span>
+          <div>
+            <h2 class="section-title">Pour qui est ce questionnaire ?</h2>
+            <p>Ces informations permettent d'adapter les questions au profil.</p>
+          </div>
+        </header>
 
         <form [formGroup]="setupForm" class="setup-form">
-          <mat-form-field appearance="outline" class="form-field-large">
+          <mat-form-field appearance="outline">
             <mat-label>Qui répond ?</mat-label>
             <mat-select formControlName="respondent">
-              <mat-option value="parent">Parent / Tuteur</mat-option>
+              <mat-option value="parent">Parent / tuteur</mat-option>
               <mat-option value="adolescent">Adolescent(e)</mat-option>
             </mat-select>
-            <mat-hint>Sélectionnez le type de répondant</mat-hint>
           </mat-form-field>
 
-          <!-- Parent connecté, aucun enfant encore choisi : liste dynamique de SES enfants réels
-               (jamais de saisie libre), pour que la session soit bien rattachée au bon enfant côté
-               backend plutôt qu'à un prénom tapé au clavier et jamais transmis à l'API. -->
+          <!-- Parent connecté sans enfant choisi : uniquement ses enfants réels (pas de saisie
+               libre), pour rattacher la session au bon enfant côté backend. -->
           <ng-container *ngIf="isParentRole() && !childContext.selectedChildId()">
-            <mat-form-field appearance="outline" class="form-field-large" *ngIf="!loadingChildren() && children().length">
+            <mat-form-field appearance="outline" *ngIf="!loadingChildren() && children().length">
               <mat-label>Enfant concerné</mat-label>
               <mat-select (selectionChange)="onChildSelected($event.value)">
                 <mat-option *ngFor="let child of children()" [value]="child._id">
                   {{ child.firstName }} {{ child.lastName }}
                 </mat-option>
               </mat-select>
-              <mat-hint>Sélectionnez l'enfant pour qui remplir ce questionnaire</mat-hint>
             </mat-form-field>
 
-            <p class="loading-children" *ngIf="loadingChildren()">
-              <mat-spinner diameter="16" [strokeWidth]="2"></mat-spinner>
+            <p class="inline-loading" *ngIf="loadingChildren()">
+              <span class="fb-spinner"></span>
               Chargement de vos enfants…
             </p>
 
-            <div class="alert alert-error" *ngIf="!loadingChildren() && !children().length">
-              <mat-icon>error_outline</mat-icon>
-              <p>
-                Aucun enfant associé à votre compte. <a routerLink="/family/add-adolescent">Ajoutez un profil adolescent</a>
-                pour démarrer une évaluation.
-              </p>
+            <div class="fb-alert fb-alert--warning wide" *ngIf="!loadingChildren() && !children().length">
+              <mat-icon>info</mat-icon>
+              <span>
+                Aucun enfant n'est associé à votre compte.
+                <a routerLink="/family/add-adolescent">Ajoutez un profil adolescent</a> pour démarrer une évaluation.
+              </span>
             </div>
           </ng-container>
 
-          <!-- Répondant adolescent (ou tout autre cas hors parent avec enfants réels) : saisie
-               libre conservée, sans lien avec un compte enfant existant. -->
-          <mat-form-field appearance="outline" class="form-field-large" *ngIf="!childContext.selectedChildId() && !isParentRole()">
-            <mat-label>Prénom de l'enfant / adolescent</mat-label>
-            <input matInput type="text" formControlName="targetFirstName" placeholder="Ex: Lina, Thomas..." />
-            <mat-hint>Requis - Au minimum 2 caractères</mat-hint>
+          <!-- Répondant adolescent (ou cas hors parent) : saisie libre conservée. -->
+          <mat-form-field appearance="outline" *ngIf="!childContext.selectedChildId() && !isParentRole()">
+            <mat-label>Prénom</mat-label>
+            <input matInput type="text" formControlName="targetFirstName" placeholder="Ex. : Lina, Thomas…" />
+            <mat-hint>2 caractères minimum</mat-hint>
           </mat-form-field>
 
-          <mat-form-field appearance="outline" class="form-field-large" *ngIf="!childContext.selectedChildId() && !isParentRole()">
-            <mat-label>Âge (3-18 ans)</mat-label>
+          <mat-form-field appearance="outline" *ngIf="!childContext.selectedChildId() && !isParentRole()">
+            <mat-label>Âge (3 à 18 ans)</mat-label>
             <input matInput type="number" min="3" max="18" formControlName="age" />
-            <mat-hint>L'âge permet d'adapter le questionnaire</mat-hint>
           </mat-form-field>
-
-          <button
-            mat-flat-button
-            color="primary"
-            type="button"
-            (click)="loadCatalog()"
-            [disabled]="setupForm.invalid || loadingCatalog()"
-            class="btn-large"
-          >
-            <span *ngIf="!loadingCatalog()">
-              <mat-icon>arrow_forward</mat-icon>
-              Continuer vers la sélection
-            </span>
-            <mat-spinner *ngIf="loadingCatalog()" diameter="20" [strokeWidth]="2"></mat-spinner>
-          </button>
         </form>
 
-        <div class="setup-summary" *ngIf="catalog().domains.length" [@fadeIn]>
-          <p class="summary-label">Configuration actuelle:</p>
-          <p class="summary-content">
-            <strong>{{ respondentLabel() }}</strong> · 
-            <strong>{{ setupForm.getRawValue().targetFirstName }}</strong> · 
-            <strong>{{ childContext.selectedChildId() ? catalog().age : setupForm.getRawValue().age }} ans</strong>
+        <div class="step-actions">
+          <button class="fb-btn" type="button" (click)="loadCatalog()" [disabled]="setupForm.invalid || loadingCatalog()">
+            <span class="fb-spinner light" *ngIf="loadingCatalog()" aria-hidden="true"></span>
+            {{ loadingCatalog() ? 'Chargement…' : 'Continuer' }}
+            <mat-icon *ngIf="!loadingCatalog()">arrow_forward</mat-icon>
+          </button>
+          <p class="recap" *ngIf="catalog().domains.length">
+            <mat-icon>check_circle</mat-icon>
+            {{ respondentLabel() }} · {{ setupForm.getRawValue().targetFirstName }} ·
+            {{ childContext.selectedChildId() ? catalog().age : setupForm.getRawValue().age }} ans
           </p>
         </div>
+      </section>
 
-        <div class="catalog" *ngIf="catalog().domains.length" [@fadeIn]>
-          <h3 class="catalog-title">Sélectionnez un domaine d'évaluation</h3>
-          <div class="domain-cards-grid">
-            <button
-              type="button"
-              class="domain-card"
-              *ngFor="let domain of catalog().domains"
-              [class.active]="selectedDomain() === domain.value"
-              (click)="selectDomain(domain.value)"
-              [matTooltip]="'Questionnaire: ' + domain.questionCount + ' questions'"
-            >
-              <div class="card-icon">
-                <mat-icon>assessment</mat-icon>
-              </div>
-              <div class="card-content">
-                <span class="domain-label">{{ domain.label }}</span>
-                <strong class="question-count">{{ domain.questionCount }} questions</strong>
-              </div>
-              <div class="card-indicator" *ngIf="selectedDomain() === domain.value">
-                <mat-icon>check_circle</mat-icon>
-              </div>
-            </button>
+      <section class="fb-card fb-card--lg step" *ngIf="catalog().domains.length">
+        <header class="step-head">
+          <span class="step-num">2</span>
+          <div>
+            <h2 class="section-title">Choisissez un domaine</h2>
+            <p>Chaque domaine explore un aspect différent du rapport aux écrans.</p>
           </div>
-        </div>
+        </header>
 
-        <div class="actions" *ngIf="catalog().domains.length" [@fadeIn]>
-          <button 
-            mat-flat-button 
-            color="primary" 
-            type="button" 
-            (click)="startSurvey()" 
-            [disabled]="!selectedDomain() || loadingSession()"
-            class="btn-primary"
+        <div class="domains" role="radiogroup" aria-label="Domaine d'évaluation">
+          <button
+            type="button"
+            role="radio"
+            class="domain"
+            *ngFor="let domain of catalog().domains"
+            [class.active]="selectedDomain() === domain.value"
+            [attr.aria-checked]="selectedDomain() === domain.value"
+            (click)="selectDomain(domain.value)"
           >
-            <mat-icon>play_circle_filled</mat-icon>
-            {{ loadingSession() ? 'Démarrage...' : 'Démarrer le Questionnaire' }}
+            <span class="domain-icon"><mat-icon>{{ selectedDomain() === domain.value ? 'check_circle' : 'assessment' }}</mat-icon></span>
+            <span class="domain-text">
+              <strong>{{ domain.label }}</strong>
+              <small>{{ domain.questionCount }} questions</small>
+            </span>
           </button>
         </div>
 
-        <div class="alert alert-error" *ngIf="errorMessage()" [@fadeIn]>
-          <mat-icon>error_outline</mat-icon>
-          <p>{{ errorMessage() }}</p>
+        <div class="step-actions">
+          <button class="fb-btn fb-btn--accent" type="button" (click)="startSurvey()" [disabled]="!selectedDomain() || loadingSession()">
+            <mat-icon>play_arrow</mat-icon>
+            {{ loadingSession() ? 'Démarrage…' : 'Démarrer le questionnaire' }}
+          </button>
         </div>
-      </mat-card>
+      </section>
 
-      <ng-template #sessionTpl>
-        <mat-card class="panel survey-panel" [@slideIn]>
-          <div class="panel-head compact">
-            <div class="header-content">
-              <h2>{{ currentQuestion()?.domainLabel || session()?.domainLabel }}</h2>
-              <p class="header-subtitle">{{ dynamicSessionMessage() }}</p>
-            </div>
-            <div class="progress-box">
-              <div class="progress-circle">
-                <svg class="progress-ring" viewBox="0 0 100 100">
-                  <circle class="progress-ring-circle" cx="50" cy="50" r="45" />
-                </svg>
-                <div class="progress-text">
-                  <span class="percentage">{{ progress().percent }}%</span>
-                  <span class="counter">{{ progress().answered }}/{{ progress().total }}</span>
+      <div class="fb-alert fb-alert--error" role="alert" *ngIf="errorMessage()">
+        <mat-icon>error_outline</mat-icon>
+        <span>{{ errorMessage() }}</span>
+      </div>
+    </div>
+
+    <!-- ── Session ───────────────────────────────────── -->
+    <ng-template #sessionTpl>
+      <section class="fb-card fb-card--lg session">
+        <header class="session-head">
+          <div class="session-title">
+            <span class="fb-eyebrow">{{ currentQuestion()?.domainLabel || session()?.domainLabel }}</span>
+            <p>{{ dynamicSessionMessage() }}</p>
+          </div>
+          <div class="session-stats">
+            <span class="stat"><strong>{{ progress().answered }}</strong>/{{ progress().total }} réponses</span>
+            <span class="stat" *ngIf="elapsedTime()"><mat-icon>schedule</mat-icon>{{ formatTime(elapsedTime()) }}</span>
+          </div>
+        </header>
+
+        <div class="progress" role="progressbar" aria-label="Progression du questionnaire" [attr.aria-valuenow]="progress().percent" aria-valuemin="0" aria-valuemax="100">
+          <span class="progress-fill" [style.width.%]="progress().percent"></span>
+        </div>
+
+        <div class="meta">
+          <span class="chip"><mat-icon>person</mat-icon>{{ respondentLabel() }}</span>
+          <span class="chip"><mat-icon>child_care</mat-icon>{{ setupForm.getRawValue().targetFirstName || 'Profil' }}</span>
+          <span class="chip"><mat-icon>cake</mat-icon>{{ session()?.age }} ans</span>
+          <span class="chip"><mat-icon>groups</mat-icon>{{ ageSegment() }}</span>
+        </div>
+
+        <nav class="dots" *ngIf="session() && session()!.answers.length" aria-label="Réponses déjà données">
+          <button
+            *ngFor="let answer of session()?.answers; let i = index"
+            type="button"
+            class="dot"
+            [class.answered]="!answer.draft"
+            [class.draft]="answer.draft"
+            [matTooltip]="'Revoir la question ' + (i + 1)"
+            [attr.aria-label]="'Question ' + (i + 1) + ' — ' + (answer.draft ? 'brouillon' : 'répondue')"
+            (click)="reviewAnswer(i)"
+          ></button>
+        </nav>
+
+        <div class="fb-alert resume" *ngIf="resumeNotice()">
+          <mat-icon>info</mat-icon>
+          <span>{{ resumeNotice() }}</span>
+        </div>
+
+        <!-- Terminé -->
+        <div class="done" *ngIf="completed(); else questionTpl">
+          <div class="done-head">
+            <span class="done-icon"><mat-icon>task_alt</mat-icon></span>
+            <h2>Questionnaire terminé !</h2>
+            <p>Vos réponses ont bien été enregistrées. Durée : <strong>{{ formatTime(elapsedTime()) }}</strong></p>
+          </div>
+
+          <div class="fb-alert" *ngIf="scoreSubmitting()">
+            <span class="fb-spinner"></span>
+            <span>Calcul de votre score en cours…</span>
+          </div>
+          <div class="fb-alert fb-alert--error" *ngIf="scoreError()">
+            <mat-icon>error_outline</mat-icon>
+            <span>{{ scoreError() }}</span>
+            <button class="fb-btn fb-btn--ghost fb-btn--sm retry" type="button" (click)="retryScoreCalculation()">Réessayer</button>
+          </div>
+
+          <div class="done-actions">
+            <button class="fb-btn" type="button" (click)="viewResults()" [disabled]="scoreSubmitting()">
+              <mat-icon>insights</mat-icon>
+              Voir mon résultat
+            </button>
+            <button class="fb-btn fb-btn--ghost" type="button" (click)="exportSummary()">
+              <mat-icon>download</mat-icon>
+              Exporter en PDF
+            </button>
+            <button class="fb-btn fb-btn--ghost" type="button" (click)="resetSurvey()">
+              <mat-icon>restart_alt</mat-icon>
+              Recommencer
+            </button>
+          </div>
+
+          <div class="summary" *ngIf="summaryAnswers().length">
+            <h3 class="section-title">Synthèse de vos réponses</h3>
+            <ol>
+              <li *ngFor="let item of summaryAnswers(); let i = index">
+                <span class="num">{{ i + 1 }}</span>
+                <div class="summary-q">
+                  <p>{{ item.questionPrompt || item.questionCode }}</p>
+                  <small>{{ item.domain }} · {{ getQuestionTypeLabel(item.type) }}</small>
                 </div>
+                <strong>{{ item.answer }}</strong>
+              </li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- Question -->
+        <ng-template #questionTpl>
+          <ng-container *ngIf="currentQuestion(); else waitingTpl">
+            <div class="question">
+              <div class="question-badges">
+                <span class="fb-badge">Question {{ progress().answered + 1 }} sur {{ progress().total }}</span>
+                <span class="fb-badge fb-badge--neutral">{{ questionTypeLabel() }}</span>
               </div>
-              <div class="timer" *ngIf="elapsedTime()">
-                <mat-icon>schedule</mat-icon>
-                <span>{{ formatTime(elapsedTime()) }}</span>
-              </div>
+              <h2 class="prompt">{{ currentQuestion()?.prompt }}</h2>
+              <p class="help" *ngIf="currentQuestion()?.helpText">
+                <mat-icon>lightbulb</mat-icon>
+                {{ currentQuestion()?.helpText }}
+              </p>
             </div>
-          </div>
 
-          <div class="session-meta">
-            <span class="meta-chip">
-              <mat-icon>person</mat-icon>
-              {{ respondentLabel() }}
-            </span>
-            <span class="meta-chip">
-              <mat-icon>child_care</mat-icon>
-              {{ setupForm.getRawValue().targetFirstName || 'Profil' }}
-            </span>
-            <span class="meta-chip">
-              <mat-icon>cake</mat-icon>
-              {{ session()?.age }} ans
-            </span>
-            <span class="meta-chip">
-              <mat-icon>group_age</mat-icon>
-              {{ ageSegment() }}
-            </span>
-          </div>
-
-          <div class="progress-container">
-            <div class="progress-bar">
-              <div class="progress-fill" [style.width.%]="progress().percent" [@expandWidth]></div>
-            </div>
-            <span class="progress-label">Progression du questionnaire</span>
-          </div>
-
-          <div class="question-nav-indicator" *ngIf="session() && session()!.answers.length">
-            <div class="nav-dots">
+            <div class="choices" *ngIf="currentQuestion()?.type === 'single-choice'">
               <button
-                *ngFor="let answer of session()?.answers; let i = index"
                 type="button"
-                class="nav-dot"
-                [class.answered]="!answer.draft"
-                [class.draft]="answer.draft"
-                [matTooltip]="answer.questionCode"
-                [attr.aria-label]="answer.questionCode + ' — ' + (answer.draft ? 'brouillon' : 'répondue')"
-                (click)="reviewAnswer(i)"
-              ></button>
-            </div>
-          </div>
-
-          <div class="resume-note" *ngIf="resumeNotice()" [@fadeIn]>
-            <mat-icon>info</mat-icon>
-            <p>{{ resumeNotice() }}</p>
-          </div>
-
-          <div class="completed-box" *ngIf="completed(); else questionTpl" [@fadeIn]>
-            <div class="completed-header">
-              <mat-icon class="success-icon">check_circle</mat-icon>
-              <h3>Questionnaire Complété!</h3>
-              <p>Vos réponses ont été sauvegardées avec succès. Durée totale: <strong>{{ formatTime(elapsedTime()) }}</strong></p>
-            </div>
-
-            <div class="summary" *ngIf="summaryAnswers().length">
-              <h4>Synthèse de vos réponses</h4>
-              <div class="summary-rows">
-                <div class="summary-row" *ngFor="let item of summaryAnswers(); let i = index" [@slideIn]>
-                  <div class="row-number">{{ i + 1 }}</div>
-                  <div class="row-content">
-                    <p class="q-title">{{ item.questionPrompt || item.questionCode }}</p>
-                    <div class="row-meta">
-                      <span class="meta-domain">{{ item.domain }}</span>
-                      <span class="meta-type">{{ getQuestionTypeLabel(item.type) }}</span>
-                    </div>
-                  </div>
-                  <strong class="q-answer">{{ item.answer }}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div class="score-status" *ngIf="scoreSubmitting()">
-              <mat-icon>hourglass_top</mat-icon>
-              <p>Calcul de votre score en cours…</p>
-            </div>
-            <div class="score-status error" *ngIf="scoreError()">
-              <mat-icon>error_outline</mat-icon>
-              <p>{{ scoreError() }}</p>
-              <button mat-stroked-button type="button" (click)="retryScoreCalculation()">Réessayer</button>
-            </div>
-
-            <div class="completed-actions">
-              <button
-                mat-flat-button
-                color="primary"
-                type="button"
-                (click)="viewResults()"
-                class="btn-results"
-                [disabled]="scoreSubmitting()"
+                class="choice"
+                *ngFor="let option of currentQuestion()?.options || []"
+                [disabled]="saving()"
+                (click)="chooseOption(option.value)"
               >
-                <mat-icon>insights</mat-icon>
-                Voir mon résultat
-              </button>
-              <button mat-stroked-button type="button" (click)="exportSummary()" class="btn-export">
-                <mat-icon>download</mat-icon>
-                Exporter en PDF
-              </button>
-              <button mat-stroked-button type="button" (click)="resetSurvey()" class="btn-restart">
-                <mat-icon>restart_alt</mat-icon>
-                Recommencer
+                <span class="radio" aria-hidden="true"></span>
+                {{ option.label }}
               </button>
             </div>
+
+            <div class="likert" *ngIf="currentQuestion()?.type === 'likert'">
+              <button
+                type="button"
+                class="likert-btn"
+                *ngFor="let option of likertOptions"
+                [disabled]="saving()"
+                (click)="chooseLikert(option.value)"
+              >
+                <span class="likert-value">{{ option.value }}</span>
+                <small>{{ option.label }}</small>
+              </button>
+            </div>
+            <p class="kbd-hint" *ngIf="currentQuestion()?.type === 'likert'">Astuce : tapez 1 à 5 au clavier pour répondre.</p>
+
+            <form *ngIf="currentQuestion()?.type === 'text'" [formGroup]="answerForm" class="text-form">
+              <mat-form-field appearance="outline">
+                <mat-label>Votre réponse</mat-label>
+                <textarea matInput rows="5" formControlName="textAnswer" placeholder="Exprimez-vous librement…"></textarea>
+                <mat-hint align="end">{{ getCharacterCount() }}/500 caractères</mat-hint>
+              </mat-form-field>
+            </form>
+
+            <div class="question-nav">
+              <button class="fb-btn fb-btn--ghost" type="button" (click)="previousQuestion()" [disabled]="!canGoBack() || saving()">
+                <mat-icon>arrow_back</mat-icon>
+                Précédent
+              </button>
+              <span class="status" aria-live="polite">
+                <ng-container *ngIf="saving()"><span class="fb-spinner"></span>Enregistrement…</ng-container>
+                <ng-container *ngIf="!saving() && successMessage()"><mat-icon class="ok">check_circle</mat-icon>{{ successMessage() }}</ng-container>
+              </span>
+              <button
+                *ngIf="currentQuestion()?.type === 'text'"
+                class="fb-btn"
+                type="button"
+                (click)="advanceTextQuestion()"
+                [disabled]="saving()"
+              >
+                Suivant
+                <mat-icon>arrow_forward</mat-icon>
+              </button>
+            </div>
+
+            <div class="fb-alert fb-alert--error" role="alert" *ngIf="errorMessage()">
+              <mat-icon>error_outline</mat-icon>
+              <span>{{ errorMessage() }}</span>
+            </div>
+          </ng-container>
+        </ng-template>
+
+        <ng-template #waitingTpl>
+          <div class="fb-loading">
+            <span class="fb-spinner"></span>
+            Chargement de la question suivante…
           </div>
-
-          <ng-template #questionTpl>
-            <ng-container *ngIf="currentQuestion(); else waitingTpl">
-              <div class="question-head" [@fadeIn]>
-                <div class="question-badges">
-                  <span class="segment-chip">{{ currentQuestion()?.domainLabel }}</span>
-                  <span class="type-chip">{{ questionTypeLabel() }}</span>
-                </div>
-                <h3 class="question-prompt">{{ currentQuestion()?.prompt }}</h3>
-                <p *ngIf="currentQuestion()?.helpText" class="help-text">
-                  <mat-icon>info</mat-icon>
-                  {{ currentQuestion()?.helpText }}
-                </p>
-              </div>
-
-              <div *ngIf="currentQuestion()?.type === 'single-choice'" class="choice-grid" [@fadeIn]>
-                <button
-                  type="button"
-                  class="choice-btn"
-                  *ngFor="let option of currentQuestion()?.options || []"
-                  [disabled]="saving()"
-                  (click)="chooseOption(option.value)"
-                >
-                  <span class="choice-label">{{ option.label }}</span>
-                </button>
-              </div>
-
-              <div *ngIf="currentQuestion()?.type === 'likert'" class="likert-grid" [@fadeIn]>
-                <button
-                  type="button"
-                  class="likert-btn"
-                  *ngFor="let option of likertOptions"
-                  [disabled]="saving()"
-                  (click)="chooseLikert(option.value)"
-                >
-                  <span class="likert-value">{{ option.value }}</span>
-                  <small class="likert-label">{{ option.label }}</small>
-                </button>
-              </div>
-
-              <form *ngIf="currentQuestion()?.type === 'text'" [formGroup]="answerForm" class="text-form" [@fadeIn]>
-                <mat-form-field appearance="outline" class="text-field-full">
-                  <mat-label>Votre réponse</mat-label>
-                  <textarea 
-                    matInput 
-                    rows="6" 
-                    formControlName="textAnswer"
-                    placeholder="Exprimez votre réponse avec détails si nécessaire..."
-                  ></textarea>
-                  <mat-hint align="end">{{ getCharacterCount() }}/500 caractères</mat-hint>
-                </mat-form-field>
-
-                <div class="actions">
-                  <button 
-                    mat-stroked-button 
-                    type="button" 
-                    (click)="previousQuestion()"
-                    [disabled]="!canGoBack() || saving()"
-                  >
-                    <mat-icon>arrow_back</mat-icon>
-                    Précédent
-                  </button>
-                  <button 
-                    mat-flat-button 
-                    color="primary" 
-                    type="button" 
-                    (click)="advanceTextQuestion()" 
-                    [disabled]="saving()"
-                    class="btn-next"
-                  >
-                    {{ saving() ? 'Enregistrement...' : 'Suivant' }}
-                    <mat-icon>arrow_forward</mat-icon>
-                  </button>
-                </div>
-              </form>
-
-              <div class="question-nav" *ngIf="currentQuestion()?.type !== 'text'">
-                <button 
-                  mat-stroked-button 
-                  type="button" 
-                  (click)="previousQuestion()"
-                  [disabled]="!canGoBack()"
-                >
-                  <mat-icon>arrow_back</mat-icon>
-                  Précédent
-                </button>
-                <div class="question-counter">
-                  Question {{ (progress().answered + 1) }}/{{ progress().total }}
-                </div>
-              </div>
-
-              <div class="feedback-messages">
-                <p class="autosave" *ngIf="saving()">
-                  <mat-icon class="spinner">hourglass_empty</mat-icon>
-                  Sauvegarde en cours...
-                </p>
-                <p class="success" *ngIf="successMessage()" [@fadeIn]>
-                  <mat-icon>check_circle</mat-icon>
-                  {{ successMessage() }}
-                </p>
-                <p class="error" *ngIf="errorMessage()" [@fadeIn]>
-                  <mat-icon>error_outline</mat-icon>
-                  {{ errorMessage() }}
-                </p>
-              </div>
-            </ng-container>
-          </ng-template>
-
-          <ng-template #waitingTpl>
-            <div class="loading-state">
-              <mat-spinner diameter="48" [strokeWidth]="3"></mat-spinner>
-              <p>Chargement de la question suivante...</p>
-            </div>
-          </ng-template>
-        </mat-card>
-      </ng-template>
-    </section>
+        </ng-template>
+      </section>
+    </ng-template>
   `,
   styles: [
     `
-      :host {
-        --survey-primary: var(--fb-primary);
-        --survey-primary-light: var(--fb-primary-soft);
-        --survey-success: var(--fb-success);
-        --survey-warning: var(--fb-warning);
-        --survey-danger: var(--fb-danger);
-        --survey-border: var(--fb-border);
-        --survey-bg: var(--fb-bg);
-        --survey-text: var(--fb-text);
-        --survey-muted: var(--fb-muted);
-        --survey-transition: var(--fb-transition);
-      }
+      :host { display: block; max-width: 920px; }
 
-      .survey-shell {
-        max-width: 1180px;
-        margin: 0 auto;
-        padding: 2rem 1.25rem 2.5rem;
-        display: grid;
-        gap: 1.75rem;
-      }
-
-      .hero {
-        background: linear-gradient(135deg, var(--fb-primary-soft) 0%, var(--fb-bg) 100%);
-        color: var(--fb-text);
-        border-radius: 28px;
-        padding: 2rem 2.25rem;
-        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.07);
-        border: 1px solid rgba(var(--fb-primary-rgb), 0.18);
-        animation: slideDown 0.6s ease-out;
-      }
-
-      .child-context-banner {
+      .child-banner {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        margin-top: 1rem;
-        padding: 0.85rem 1.1rem;
-        border-radius: 14px;
-        background: var(--fb-primary-soft);
-        border: 1px solid rgba(var(--fb-primary-rgb), 0.25);
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+        padding: 14px 18px;
+        border-radius: var(--fb-radius-md);
+        background: var(--fb-primary-tint);
         color: var(--fb-primary-strong);
       }
+      .child-banner p { flex: 1; min-width: 220px; margin: 0; font-size: 14.5px; }
 
-      .child-context-banner p {
-        margin: 0;
-        flex: 1;
-        font-size: 0.9rem;
-      }
-
-      @keyframes slideDown {
-        from {
-          opacity: 0;
-          transform: translateY(-20px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      .hero-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-        flex-wrap: wrap;
-        margin-bottom: 0.75rem;
-      }
-
-      .eyebrow {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        background: rgba(var(--fb-primary-rgb), 0.1);
-        color: var(--survey-primary);
-        padding: 0.45rem 0.95rem;
-        border-radius: 999px;
-        font-size: 0.78rem;
-        font-weight: 700;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        margin-bottom: 1rem;
-      }
-
-      .hero h1 {
-        margin: 0 0 0.75rem;
-        font-size: clamp(2rem, 3vw, 2.8rem);
-        font-weight: 800;
-        line-height: 1.05;
-      }
-
-      .hero p {
-        margin: 0;
-        max-width: 720px;
-        color: var(--survey-text);
-        line-height: 1.75;
-        font-size: 1.03rem;
-      }
-
-      .panel {
-        padding: 2rem;
-        border-radius: 24px;
-        border: 1px solid var(--survey-border);
-        background: #fff;
-        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.06);
-        animation: slideUp 0.5s ease-out;
-      }
-
-      @keyframes slideUp {
-        from {
-          opacity: 0;
-          transform: translateY(20px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      @keyframes slideIn {
-        from {
-          opacity: 0;
-          transform: translateX(-20px);
-        }
-        to {
-          opacity: 1;
-          transform: translateX(0);
-        }
-      }
-
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
-        }
-      }
-
-      @keyframes fadeInOut {
-        from {
-          opacity: 0.95;
-        }
-        to {
-          opacity: 1;
-        }
-      }
-
-      @keyframes expandWidth {
-        from {
-          transform: scaleX(0);
-          transform-origin: left;
-        }
-        to {
-          transform: scaleX(1);
-          transform-origin: left;
-        }
-      }
-
-      .panel-head {
-        display: grid;
-        gap: 0.5rem;
-        margin-bottom: 1.5rem;
-      }
-
-      .panel-head h2 {
-        margin: 0;
-        font-size: 1.75rem;
-        font-weight: 700;
-        color: var(--survey-text);
-      }
-
-      .panel-head p {
-        margin: 0;
-        color: var(--survey-muted);
-        font-size: 1rem;
-        line-height: 1.5;
-      }
-
-      .panel-head.compact {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        align-items: flex-start;
-        gap: 1.5rem;
-      }
-
-      .header-content {
-        display: grid;
-        gap: 0.25rem;
-      }
-
-      .header-subtitle {
-        margin: 0;
-        color: var(--survey-muted);
-        font-size: 0.95rem;
-      }
-
-      .setup-form {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-      }
-
-      .form-field-large {
-        width: 100%;
-      }
-
-      .form-field-large ::ng-deep .mdc-text-field {
-        width: 100%;
-      }
-
-      .btn-large {
-        width: 100%;
-        padding: 0.85rem 1.5rem !important;
-        font-size: 1rem !important;
-        font-weight: 600 !important;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-        transition: var(--survey-transition);
-        box-shadow: 0 4px 12px rgba(var(--fb-primary-rgb), 0.3) !important;
-      }
-
-      .btn-large:hover:not(:disabled) {
-        box-shadow: 0 8px 24px rgba(var(--fb-primary-rgb), 0.4) !important;
-        transform: translateY(-2px);
-      }
-
-      .setup-summary {
-        margin: 1rem 0;
-        border: 1px solid var(--survey-border);
-        background: linear-gradient(135deg, var(--survey-bg), var(--fb-primary-soft));
-        border-radius: 16px;
-        padding: 1rem;
-        color: var(--survey-text);
-        animation: fadeIn 0.4s ease-out;
-      }
-
-      .summary-label {
-        margin: 0 0 0.5rem;
-        font-size: 0.85rem;
-        font-weight: 600;
-        color: var(--survey-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
-
-      .summary-content {
-        margin: 0;
-        font-size: 1rem;
-        color: var(--survey-text);
-        display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
-      }
-
-      .summary-content strong {
-        color: var(--survey-primary);
-        font-weight: 700;
-      }
-
-      .catalog {
-        margin: 1.5rem 0;
-      }
-
-      .catalog-title {
-        margin: 0 0 1rem;
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: var(--survey-text);
-      }
-
-      .domain-cards-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-      }
-
-      .domain-card {
-        position: relative;
-        text-align: left;
-        border: 1px solid var(--survey-border);
-        background: #fff;
-        border-radius: 22px;
-        padding: 1.5rem;
-        cursor: pointer;
-        transition: var(--survey-transition);
-        overflow: hidden;
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 1rem;
-        align-items: center;
-      }
-
-      .domain-card::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(135deg, transparent, rgba(var(--fb-primary-rgb), 0.03));
-        opacity: 0;
-        transition: opacity 0.3s ease;
-      }
-
-      .domain-card:hover {
-        border-color: var(--survey-primary);
-        box-shadow: 0 16px 32px rgba(var(--fb-primary-rgb), 0.12);
-        transform: translateY(-2px);
-      }
-
-      .domain-card.active {
-        border-color: var(--survey-primary);
-        background: var(--fb-primary-soft);
-        box-shadow: 0 16px 34px rgba(var(--fb-primary-rgb), 0.14);
-      }
-
-      .card-icon {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 46px;
-        height: 46px;
-        border-radius: 16px;
-        background: var(--survey-primary-light);
-        color: var(--survey-primary);
-      }
-
-      .domain-card.active .card-icon {
-        background: linear-gradient(135deg, var(--fb-primary), var(--fb-primary-strong));
-        color: white;
-      }
-
-      .card-content {
-        display: grid;
-        gap: 0.25rem;
-      }
-
-      .domain-label {
-        color: var(--survey-text);
-        font-size: 0.95rem;
-        font-weight: 700;
-      }
-
-      .question-count {
-        color: var(--survey-muted);
-        font-size: 0.95rem;
-        font-weight: 500;
-      }
-
-      .card-indicator {
-        position: absolute;
-        top: 18px;
-        right: 18px;
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
+      /* Configuration */
+      .setup { display: flex; flex-direction: column; gap: 20px; }
+      .step { animation: slideUp 0.3s var(--fb-ease); }
+      .step-head { display: flex; gap: 14px; margin-bottom: 20px; }
+      .step-head p { margin: 4px 0 0; color: var(--fb-text-mid); font-size: 14.5px; }
+      .step-num {
         display: grid;
         place-items: center;
-        background: var(--survey-primary);
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        background: var(--fb-ink);
         color: #fff;
-        opacity: 0;
-        transform: scale(0.85);
-        transition: var(--survey-transition);
+        font-weight: 700;
       }
+      .setup-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; }
+      .setup-form .wide, .setup-form .inline-loading { grid-column: 1 / -1; }
+      .inline-loading { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--fb-muted); font-size: 14px; }
+      .step-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+      .recap { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--fb-text-mid); font-size: 14px; font-weight: 600; }
+      .recap mat-icon { color: var(--fb-success); width: 20px; height: 20px; font-size: 20px; }
+      .fb-spinner.light { width: 18px; height: 18px; border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
 
-      .domain-card.active .card-indicator {
-        opacity: 1;
-        transform: scale(1);
-      }
-
-      .actions {
-        margin: 1.75rem 0 0;
-        display: flex;
-        justify-content: flex-end;
-        gap: 1rem;
-        flex-wrap: wrap;
-      }
-
-      .btn-primary,
-      .btn-export,
-      .btn-restart,
-      .btn-next {
+      .domains { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 20px; }
+      .domain {
         display: flex;
         align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-        padding: 0.85rem 1.5rem !important;
-        font-weight: 600 !important;
-        transition: var(--survey-transition);
+        gap: 12px;
+        padding: 14px;
+        border: 1.5px solid var(--fb-border);
+        border-radius: 16px;
+        background: var(--fb-surface);
+        color: var(--fb-text);
+        text-align: left;
+        cursor: pointer;
       }
-
-      .btn-primary {
-        flex: 1;
-        min-width: 200px;
-        box-shadow: 0 4px 12px rgba(var(--fb-primary-rgb), 0.3) !important;
-      }
-
-      .btn-primary:hover:not(:disabled) {
-        box-shadow: 0 8px 24px rgba(var(--fb-primary-rgb), 0.4) !important;
-        transform: translateY(-2px);
-      }
-
-      .alert {
-        border-radius: 12px;
-        padding: 1rem;
-        display: flex;
-        align-items: flex-start;
-        gap: 0.75rem;
-        animation: slideDown 0.3s ease-out;
-      }
-
-      .alert-error {
-        background: rgba(var(--fb-danger-rgb), 0.08);
-        border: 1px solid rgba(var(--fb-danger-rgb), 0.2);
-        color: var(--survey-danger);
-      }
-
-      .alert mat-icon {
+      .domain:hover { border-color: var(--fb-border-strong); background: var(--fb-surface-alt); }
+      .domain.active { border-color: var(--fb-primary); background: var(--fb-primary-soft); box-shadow: 0 0 0 3px rgba(var(--fb-primary-rgb), 0.1); }
+      .domain-icon {
+        display: grid;
+        place-items: center;
         flex-shrink: 0;
-        margin-top: 2px;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: var(--fb-surface-alt);
+        color: var(--fb-text-mid);
       }
+      .domain.active .domain-icon { background: var(--fb-primary); color: #fff; }
+      .domain-text strong { display: block; font-size: 14.5px; }
+      .domain-text small { color: var(--fb-muted); font-size: 13px; }
 
-      .alert p {
-        margin: 0;
-        font-size: 0.95rem;
-        line-height: 1.5;
+      /* Session */
+      .session { display: flex; flex-direction: column; gap: 18px; }
+      .session-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+      .session-title p { margin: 6px 0 0; color: var(--fb-text-mid); font-size: 14px; }
+      .session-stats { display: flex; gap: 10px; align-items: flex-start; }
+      .stat {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 12px;
+        border-radius: var(--fb-radius-pill);
+        background: var(--fb-surface-alt);
+        font-size: 13px;
+        color: var(--fb-text-mid);
+        white-space: nowrap;
       }
+      .stat strong { color: var(--fb-text); }
+      .stat mat-icon { width: 16px; height: 16px; font-size: 16px; }
+      .progress { height: 8px; border-radius: 8px; background: var(--fb-sunken); overflow: hidden; }
+      .progress-fill { display: block; height: 100%; border-radius: 8px; background: var(--fb-primary); transition: width 0.4s var(--fb-ease); }
 
-      .survey-panel {
-        display: grid;
-        gap: 1.5rem;
+      .meta { display: flex; flex-wrap: wrap; gap: 8px; }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border: 1px solid var(--fb-border);
+        border-radius: var(--fb-radius-pill);
+        font-size: 13px;
+        color: var(--fb-text-mid);
       }
+      .chip mat-icon { width: 16px; height: 16px; font-size: 16px; color: var(--fb-muted); }
 
-      .progress-box {
-        display: grid;
-        gap: 1rem;
-        justify-items: end;
+      .dots { display: flex; flex-wrap: wrap; gap: 6px; }
+      .dot { width: 14px; height: 14px; padding: 0; border: none; border-radius: 50%; background: var(--fb-sunken); cursor: pointer; }
+      .dot.answered { background: var(--fb-primary); }
+      .dot.draft { background: var(--fb-accent); }
+      .dot:hover { transform: scale(1.25); }
+
+      /* Question */
+      .question { padding-top: 6px; border-top: 1px solid var(--fb-border); animation: fadeIn 0.25s ease; }
+      .question-badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 12px; }
+      .prompt { margin: 0; font-size: clamp(1.35rem, 1.1rem + 0.8vw, 1.75rem); line-height: 1.25; }
+      .help {
+        display: flex;
+        gap: 8px;
+        margin: 12px 0 0;
+        padding: 10px 14px;
+        border-radius: var(--fb-radius-sm);
+        background: var(--fb-accent-soft);
+        color: var(--fb-warning-ink);
+        font-size: 14px;
       }
+      .help mat-icon { flex-shrink: 0; width: 20px; height: 20px; font-size: 20px; }
 
-      .progress-circle {
-        position: relative;
-        width: 100px;
-        height: 100px;
+      .choices { display: grid; gap: 10px; }
+      .choice {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 54px;
+        padding: 12px 16px;
+        border: 1.5px solid var(--fb-border);
+        border-radius: 16px;
+        background: var(--fb-surface);
+        color: var(--fb-text);
+        font-size: 15px;
+        font-weight: 600;
+        text-align: left;
+        cursor: pointer;
       }
+      .radio { flex-shrink: 0; width: 20px; height: 20px; border: 2px solid var(--fb-border-strong); border-radius: 50%; transition: border 0.15s ease; }
+      .choice:hover:not(:disabled) { border-color: var(--fb-primary); background: var(--fb-primary-soft); }
+      .choice:hover:not(:disabled) .radio { border: 6px solid var(--fb-primary); }
+      .choice:disabled { opacity: 0.55; cursor: wait; }
 
-      .progress-ring {
-        transform: rotate(-90deg);
-      }
-
-      .progress-ring-circle {
-        transition: stroke-dashoffset 0.6s ease;
-        stroke: var(--survey-border);
-        fill: none;
-        stroke-width: 4;
-      }
-
-      .progress-text {
-        position: absolute;
-        inset: 0;
+      .likert { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+      .likert-btn {
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
-        gap: 0.25rem;
-      }
-
-      .percentage {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: var(--survey-primary);
-      }
-
-      .counter {
-        font-size: 0.8rem;
-        color: var(--survey-muted);
-      }
-
-      .timer {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        color: var(--survey-muted);
-        font-size: 0.95rem;
-        font-weight: 500;
-      }
-
-      .session-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-      }
-
-      .meta-chip,
-      .type-chip,
-      .segment-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        width: fit-content;
-        border-radius: 999px;
-        font-size: 0.85rem;
-        padding: 0.4rem 0.85rem;
-        border: 1px solid var(--survey-border);
-        background: #fff;
-        color: var(--survey-text);
-        font-weight: 500;
-        transition: var(--survey-transition);
-      }
-
-      .meta-chip mat-icon,
-      .type-chip mat-icon,
-      .segment-chip mat-icon {
-        font-size: 16px;
-        width: 16px;
-        height: 16px;
-      }
-
-      .meta-chip:hover {
-        background: var(--survey-bg);
-        border-color: var(--survey-primary);
-      }
-
-      .type-chip {
-        background: var(--survey-primary-light);
-        color: var(--survey-primary);
-      }
-
-      .segment-chip {
-        background: var(--survey-primary-light);
-        color: var(--survey-primary);
-        border-color: var(--survey-primary);
-      }
-
-      .progress-container {
-        display: grid;
-        gap: 0.5rem;
-      }
-
-      .progress-bar {
-        width: 100%;
-        height: 12px;
-        border-radius: 999px;
-        background: var(--survey-border);
-        overflow: hidden;
-        position: relative;
-      }
-
-      .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, var(--fb-primary), var(--fb-primary-strong));
-        border-radius: 999px;
-        box-shadow: 0 0 12px rgba(var(--fb-primary-rgb), 0.5);
-        animation: expandWidth 0.6s ease-out;
-      }
-
-      .progress-label {
-        font-size: 0.8rem;
-        color: var(--survey-muted);
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.3px;
-      }
-
-      .question-nav-indicator {
-        margin: 1rem 0;
-        padding: 1rem;
-        background: var(--survey-bg);
-        border-radius: 12px;
-        border: 1px solid var(--survey-border);
-      }
-
-      .nav-dots {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-      }
-
-      .nav-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        border: none;
-        background: var(--fb-border);
-        cursor: pointer;
-        transition: var(--survey-transition);
-      }
-
-      .nav-dot.answered {
-        background: var(--survey-success);
-      }
-
-      .nav-dot.draft {
-        background: var(--survey-warning);
-      }
-
-      .nav-dot:hover {
-        transform: scale(1.3);
-      }
-
-      .resume-note {
-        border: 1px solid var(--survey-border);
-        background: var(--survey-bg);
-        border-radius: 12px;
-        padding: 1rem;
-        display: flex;
-        gap: 0.75rem;
-        align-items: flex-start;
-        animation: slideDown 0.3s ease-out;
-      }
-
-      .resume-note mat-icon {
-        color: var(--survey-warning);
-        flex-shrink: 0;
-        margin-top: 2px;
-      }
-
-      .resume-note p {
-        margin: 0;
-        color: var(--survey-text);
-        font-size: 0.95rem;
-        line-height: 1.5;
-      }
-
-      .completed-box {
-        border: 1px solid rgba(var(--fb-success-rgb), 0.24);
-        background: #effaf3;
-        border-radius: 22px;
-        padding: 2rem;
-        animation: slideUp 0.5s ease-out;
-      }
-
-      .completed-header {
-        text-align: center;
-        margin-bottom: 2rem;
-      }
-
-      .success-icon {
-        font-size: 3rem;
-        color: var(--survey-success);
-        width: 3rem;
-        height: 3rem;
-        display: block;
-        margin: 0 auto 1rem;
-        animation: scaleIn 0.5s ease-out 0.2s both;
-      }
-
-      @keyframes scaleIn {
-        from {
-          transform: scale(0);
-        }
-        to {
-          transform: scale(1);
-        }
-      }
-
-      .completed-box h3 {
-        margin: 0 0 0.5rem;
-        color: var(--survey-success);
-        font-size: 1.5rem;
-        font-weight: 700;
-      }
-
-      .completed-box > .completed-header p {
-        margin: 0;
-        color: var(--survey-text);
-        line-height: 1.6;
-      }
-
-      .summary {
-        margin: 1.5rem 0;
-      }
-
-      .summary h4 {
-        margin: 0 0 1rem;
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: var(--survey-text);
-      }
-
-      .summary-rows {
-        display: grid;
-        gap: 0.75rem;
-      }
-
-      .summary-row {
-        display: grid;
-        grid-template-columns: auto 1fr auto;
-        gap: 1rem;
-        align-items: flex-start;
-        border: 1px solid var(--survey-border);
-        border-radius: 12px;
-        background: #fff;
-        padding: 1rem;
-        transition: var(--survey-transition);
-      }
-
-      .summary-row:hover {
-        box-shadow: 0 4px 12px rgba(16, 24, 40, 0.08);
-      }
-
-      .row-number {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        background: var(--survey-primary-light);
-        color: var(--survey-primary);
-        font-weight: 700;
-        font-size: 0.9rem;
-        flex-shrink: 0;
-      }
-
-      .row-content {
-        display: grid;
-        gap: 0.35rem;
-      }
-
-      .q-title {
-        margin: 0;
-        font-weight: 600;
-        color: var(--survey-text);
-        font-size: 1rem;
-        line-height: 1.5;
-      }
-
-      .row-meta {
-        display: flex;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-      }
-
-      .meta-domain,
-      .meta-type {
-        display: inline-flex;
-        align-items: center;
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: var(--survey-muted);
-        background: var(--survey-bg);
-        padding: 0.2rem 0.5rem;
-        border-radius: 4px;
-      }
-
-      .q-answer {
-        color: var(--survey-primary);
-        font-weight: 700;
-        font-size: 1rem;
-      }
-
-      .score-status {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.6rem;
-        margin-top: 1.25rem;
-        padding: 0.75rem 1rem;
-        border-radius: 12px;
-        background: var(--survey-primary-light);
-        color: var(--survey-primary);
-        font-size: 0.9rem;
-      }
-
-      .score-status.error {
-        background: rgba(192, 57, 43, 0.08);
-        color: var(--survey-danger);
-      }
-
-      .score-status p {
-        margin: 0;
-      }
-
-      .completed-actions {
-        display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
-        margin-top: 1.5rem;
-        justify-content: center;
-      }
-
-      .btn-results,
-      .btn-export,
-      .btn-restart {
-        min-width: 180px;
-      }
-
-      .question-head {
-        animation: fadeIn 0.3s ease-out;
-      }
-
-      .question-badges {
-        display: flex;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-        margin-bottom: 1rem;
-      }
-
-      .question-prompt {
-        margin: 0.5rem 0 0;
-        font-size: 1.4rem;
-        font-weight: 700;
-        color: var(--survey-text);
-        line-height: 1.4;
-      }
-
-      .help-text {
-        margin: 0.75rem 0 0;
-        display: flex;
-        gap: 0.5rem;
-        align-items: flex-start;
-        color: var(--survey-muted);
-        font-size: 0.95rem;
-        line-height: 1.5;
-        background: var(--survey-bg);
-        padding: 0.75rem;
-        border-radius: 8px;
-        border-left: 3px solid var(--survey-warning);
-      }
-
-      .help-text mat-icon {
-        font-size: 18px;
-        width: 18px;
-        height: 18px;
-        flex-shrink: 0;
-        margin-top: 2px;
-        color: var(--survey-warning);
-      }
-
-      .choice-grid,
-      .likert-grid {
-        display: grid;
-        gap: 0.85rem;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        margin: 1.5rem 0;
-        animation: fadeIn 0.3s ease-out;
-      }
-
-      .choice-btn,
-      .likert-btn {
-        border: 1px solid var(--survey-border);
-        background: #fff;
-        border-radius: 18px;
-        padding: 1.2rem;
-        cursor: pointer;
-        text-align: center;
-        transition: var(--survey-transition);
-        font-weight: 600;
-        position: relative;
-        overflow: hidden;
-        min-height: 86px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .choice-btn::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(135deg, transparent, rgba(var(--fb-primary-rgb), 0.1));
-        opacity: 0;
-        transition: opacity 0.3s ease;
-      }
-
-      .choice-btn:hover,
-      .likert-btn:hover {
-        border-color: var(--survey-primary);
-        box-shadow: 0 14px 28px rgba(var(--fb-primary-rgb), 0.12);
-        transform: translateY(-2px);
-      }
-
-      .choice-btn:active,
-      .likert-btn:active {
-        transform: translateY(0);
-      }
-
-      .choice-btn.active,
-      .likert-btn.active {
-        border-color: var(--survey-primary);
-        background: var(--survey-primary-light);
-        color: var(--survey-primary);
-      }
-
-      .choice-label {
-        display: block;
-        font-size: 1rem;
-      }
-
-      .likert-btn {
-        display: grid;
-        gap: 0.45rem;
-        padding: 1.25rem 1rem;
-      }
-
-      .likert-value {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: var(--survey-primary);
-      }
-
-      .likert-btn.active .likert-value {
-        color: var(--survey-primary);
-      }
-
-      .likert-label {
-        color: var(--survey-muted);
-        font-size: 0.8rem;
-        font-weight: 500;
-      }
-
-      .text-form {
-        display: grid;
-        gap: 1rem;
-        margin: 1.5rem 0;
-      }
-
-      .text-field-full {
-        width: 100%;
-      }
-
-      .text-field-full ::ng-deep .mdc-text-field {
-        width: 100%;
-      }
-
-      .question-nav {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 1rem;
-        margin: 1.5rem 0;
-        padding: 1rem 1.15rem;
-        background: var(--survey-bg);
+        gap: 6px;
+        padding: 16px 8px;
+        border: 1.5px solid var(--fb-border);
         border-radius: 16px;
-        border: 1px solid var(--survey-border);
+        background: var(--fb-surface);
+        color: var(--fb-text);
+        cursor: pointer;
       }
+      .likert-btn:hover:not(:disabled) { border-color: var(--fb-primary); background: var(--fb-primary-soft); }
+      .likert-btn:disabled { opacity: 0.55; cursor: wait; }
+      .likert-value { font-family: var(--fb-font-serif); font-size: 1.6rem; font-weight: 650; line-height: 1; }
+      .likert-btn small { font-size: 12.5px; color: var(--fb-text-mid); text-align: center; }
+      .kbd-hint { margin: -6px 0 0; font-size: 12.5px; color: var(--fb-muted); }
 
-      .question-counter {
-        font-size: 0.95rem;
-        font-weight: 700;
-        color: var(--survey-primary);
-        text-align: center;
-        min-width: 120px;
-        padding: 0.55rem 0.9rem;
-        border-radius: 999px;
-        background: var(--fb-primary-soft);
-      }
+      .text-form mat-form-field { width: 100%; }
 
-      .feedback-messages {
-        display: grid;
-        gap: 0.75rem;
-      }
+      .question-nav { display: flex; align-items: center; gap: 12px; padding-top: 16px; border-top: 1px solid var(--fb-border); }
+      .status { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 13.5px; color: var(--fb-muted); }
+      .status .fb-spinner { width: 16px; height: 16px; }
+      .status .ok { width: 18px; height: 18px; font-size: 18px; color: var(--fb-success); }
 
-      .autosave,
-      .success,
-      .error {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin: 0;
-        padding: 0.75rem 1rem;
-        border-radius: 8px;
-        font-size: 0.95rem;
-        line-height: 1.5;
-        animation: slideDown 0.3s ease-out;
-      }
-
-      .autosave {
-        color: var(--survey-muted);
-        background: var(--survey-bg);
-        border: 1px solid var(--survey-border);
-      }
-
-      .success {
-        color: var(--survey-success);
-        background: rgba(var(--fb-success-rgb), 0.08);
-        border: 1px solid rgba(var(--fb-success-rgb), 0.2);
-      }
-
-      .error {
-        color: var(--survey-danger);
-        background: rgba(var(--fb-danger-rgb), 0.08);
-        border: 1px solid rgba(var(--fb-danger-rgb), 0.2);
-      }
-
-      .autosave mat-icon,
-      .success mat-icon,
-      .error mat-icon {
-        font-size: 18px;
-        width: 18px;
-        height: 18px;
-        flex-shrink: 0;
-      }
-
-      .spinner {
-        animation: spin 2s linear infinite;
-      }
-
-      @keyframes spin {
-        from {
-          transform: rotate(0deg);
-        }
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .loading-state {
-        display: grid;
+      /* Terminé */
+      .done { display: flex; flex-direction: column; gap: 18px; animation: fadeIn 0.3s ease; }
+      .done-head { text-align: center; padding: 12px 0 4px; }
+      .done-icon {
+        display: inline-grid;
         place-items: center;
-        gap: 1rem;
-        padding: 2rem;
-        text-align: center;
+        width: 64px;
+        height: 64px;
+        margin-bottom: 12px;
+        border-radius: 22px;
+        background: rgba(var(--fb-success-rgb), 0.1);
+        color: var(--fb-success);
       }
+      .done-icon mat-icon { width: 32px; height: 32px; font-size: 32px; }
+      .done-head h2 { margin: 0 0 6px; font-size: 1.75rem; }
+      .done-head p { margin: 0; color: var(--fb-text-mid); }
+      .done-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+      .retry { margin-left: auto; }
 
-      .loading-state p {
-        color: var(--survey-muted);
-        font-size: 1rem;
-        margin: 0;
-      }
+      .summary { padding-top: 18px; border-top: 1px solid var(--fb-border); }
+      .summary ol { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+      .summary li { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 12px 14px; border-radius: var(--fb-radius-sm); background: var(--fb-surface-alt); }
+      .num { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; background: var(--fb-surface); font-size: 12.5px; font-weight: 700; color: var(--fb-text-mid); }
+      .summary-q { min-width: 0; }
+      .summary-q p { margin: 0; font-size: 14px; font-weight: 600; }
+      .summary-q small { color: var(--fb-muted); font-size: 12.5px; }
+      .summary li > strong { font-size: 14px; color: var(--fb-primary-strong); text-align: right; }
 
       @media (max-width: 768px) {
-        .survey-shell {
-          padding: 1.5rem 1rem 2rem;
-          gap: 1rem;
-        }
-
-        .hero {
-          padding: 1.5rem;
-        }
-
-        .hero h1 {
-          font-size: 1.75rem;
-        }
-
-        .panel {
-          padding: 1.5rem;
-        }
-
-        .panel-head.compact {
-          grid-template-columns: 1fr;
-          align-items: stretch;
-        }
-
-        .progress-box {
-          justify-items: start;
-        }
-
-        .domain-cards-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .choice-grid,
-        .likert-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .question-nav {
-          flex-direction: column;
-        }
-
-        .summary-row {
-          grid-template-columns: 1fr;
-        }
-
-        .completed-actions {
-          flex-direction: column;
-        }
-
-        .btn-results,
-        .btn-export,
-        .btn-restart {
-          width: 100%;
-        }
-      }
-
-      ::ng-deep .mat-mdc-button,
-      ::ng-deep .mat-mdc-raised-button {
-        text-transform: none !important;
-      }
-
-      ::ng-deep .mat-mdc-button:disabled,
-      ::ng-deep .mat-mdc-raised-button:disabled {
-        opacity: 0.6;
+        .setup-form { grid-template-columns: 1fr; }
+        .likert { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+        .likert-btn { padding: 12px 4px; }
+        .likert-btn small { font-size: 11px; }
+        .question-nav { flex-wrap: wrap; }
+        .status { order: 3; flex-basis: 100%; }
+        .done-actions .fb-btn { flex: 1 1 100%; }
+        .summary li { grid-template-columns: auto 1fr; }
+        .summary li > strong { grid-column: 2; text-align: left; }
       }
     `,
   ],

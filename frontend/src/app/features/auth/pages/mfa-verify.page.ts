@@ -2,348 +2,139 @@ import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { MatIconModule } from '@angular/material/icon';
 import { AuthService } from '../../../core/services/auth.service';
+import { BrandLogoComponent } from '../../../shared/components/brand-logo/brand-logo.component';
+import { IllustrationComponent } from '../../../shared/components/illustration/illustration.component';
 
 @Component({
   selector: 'app-mfa-verify-page',
   standalone: true,
-  imports: [CommonModule, RouterLink, ReactiveFormsModule],
+  imports: [CommonModule, RouterLink, ReactiveFormsModule, MatIconModule, BrandLogoComponent, IllustrationComponent],
   template: `
-    <section class="shell">
-      <div class="card">
+    <section class="auth-center">
+      <div class="auth-card">
+        <div class="auth-card-logo"><app-brand-logo [size]="34"></app-brand-logo></div>
 
-        <!-- ── En-tête ── -->
-        <div class="card-top">
-          <div class="logo-row">
-            <svg class="logo-ic" viewBox="0 0 120 120" aria-hidden="true">
-              <circle cx="60" cy="60" r="52" fill="none" stroke="#c9a15c" stroke-width="5"/>
-              <text x="40" y="90" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="80" fill="#1c3a5e">F</text>
-              <text x="82" y="90" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="80" fill="#0d7a6f">B</text>
-            </svg>
-            <span class="logo-name"><span class="logo-name-family">Family</span><span class="logo-name-balance">Balance</span></span>
-          </div>
-
-          <div class="steps">
-            <div class="step done"></div>
-            <div class="step done"></div>
-            <div class="step active"></div>
-          </div>
-
-          <div class="icon-wrap">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
-              stroke="var(--fb-primary)" stroke-width="2" stroke-linecap="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-          </div>
-          <div class="eyebrow">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2">
-              <rect x="3" y="11" width="18" height="11" rx="2"/>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-            </svg>
-            Authentification renforcée
-          </div>
-          <div class="card-title">Vérification MFA</div>
-          <p class="card-sub">Saisissez le code à 6 chiffres envoyé à votre adresse e-mail.</p>
+        <div class="auth-progress" aria-hidden="true">
+          <span class="done"></span>
+          <span class="done"></span>
+          <span class="active"></span>
         </div>
 
-        <!-- ── Corps ── -->
-        <div class="card-body">
+        <header class="auth-card-head">
+          <app-illustration class="auth-illus" name="auth-secure" fallbackIcon="shield" [eager]="true"></app-illustration>
+          <span class="fb-eyebrow">Authentification renforcée</span>
+          <h1>Vérification en deux étapes</h1>
+          <p>Saisissez le code à 6 chiffres envoyé à votre adresse e-mail.</p>
+          <span class="email-chip" *ngIf="maskedEmail()"><mat-icon>mail_outline</mat-icon>{{ maskedEmail() }}</span>
+        </header>
 
-          <!-- Adresse masquée -->
-          <div class="email-chip" *ngIf="maskedEmail()">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-              <polyline points="22,6 12,13 2,6"/>
-            </svg>
-            {{ maskedEmail() }}
-          </div>
+        <div class="fb-alert fb-alert--success" role="status" *ngIf="successMessage()">
+          <mat-icon>check_circle</mat-icon><span>{{ successMessage() }}</span>
+        </div>
+        <div class="fb-alert fb-alert--error" role="alert" *ngIf="errorMessage()">
+          <mat-icon>error_outline</mat-icon><span>{{ errorMessage() }}</span>
+        </div>
 
-          <!-- Messages -->
-          <div class="msg success" *ngIf="successMessage()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            <span>{{ successMessage() }}</span>
-          </div>
-          <div class="msg error" *ngIf="errorMessage()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            <span>{{ errorMessage() }}</span>
-          </div>
+        <div class="otp-row" [class.shake]="shaking()" role="group" aria-label="Code de vérification à 6 chiffres">
+          <input
+            *ngFor="let ctrl of otpControls; let i = index"
+            class="otp-input"
+            [class.filled]="ctrl.value"
+            [class.err]="hasError()"
+            [formControl]="ctrl"
+            maxlength="1"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            [id]="'otp-' + i"
+            [attr.aria-label]="'Chiffre ' + (i + 1)"
+            (input)="onDigit($event, i)"
+            (keydown)="onKeydown($event, i)"
+            (focus)="onFocus($event)"
+            (paste)="onPaste($event, i)"
+          />
+        </div>
 
-          <!-- Saisie OTP — 6 cases individuelles -->
-          <div class="otp-row" [class.shake]="shaking()">
-            <input
-              *ngFor="let ctrl of otpControls; let i = index"
-              class="otp-input"
-              [class.filled]="ctrl.value"
-              [class.err]="hasError()"
-              [formControl]="ctrl"
-              maxlength="1"
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              [id]="'otp-' + i"
-              (input)="onDigit($event, i)"
-              (keydown)="onKeydown($event, i)"
-              (focus)="onFocus($event)"
-              (paste)="onPaste($event, i)"
-            />
-          </div>
-
-          <!-- Timer + renvoyer -->
-          <div class="timer-row">
-            <div class="timer">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <polyline points="12 6 12 12 16 14"/>
-              </svg>
-              Expire dans&nbsp;
-              <span class="timer-val" [class.expired]="timerSeconds() === 0">
-                {{ timerLabel() }}
-              </span>
-            </div>
-            <button
-              class="resend-btn"
-              type="button"
-              [disabled]="timerSeconds() > 0 || loading()"
-              (click)="resendCode()"
-            >
-              Renvoyer le code
-            </button>
-          </div>
-
-          <!-- Bouton principal -->
-          <button
-            class="submit-btn"
-            type="button"
-            [disabled]="!codeComplete() || loading()"
-            (click)="submit()"
-          >
-            <div class="spinner" *ngIf="loading()"></div>
-            <svg *ngIf="!loading()" width="14" height="14" viewBox="0 0 24 24"
-              fill="none" stroke="white" stroke-width="2">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-            {{ loading() ? 'Vérification…' : 'Valider le code' }}
+        <div class="timer-row">
+          <span class="timer">
+            <mat-icon>schedule</mat-icon>
+            Expire dans
+            <strong class="timer-val" [class.expired]="timerSeconds() === 0">{{ timerLabel() }}</strong>
+          </span>
+          <button class="resend-btn" type="button" [disabled]="loading()" (click)="resendCode()">
+            Recevoir un nouveau code
           </button>
-
-          <!-- Note sécurité -->
-          <div class="security-note">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-            <p>
-              Ce code est à usage unique et valable 5 minutes.
-              Ne le partagez jamais avec quiconque, y compris le support FamilyBalance.
-            </p>
-          </div>
-
         </div>
 
-        <!-- ── Pied de carte ── -->
-        <div class="card-foot">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2" class="back-icon">
-            <line x1="19" y1="12" x2="5" y2="12"/>
-            <polyline points="12 19 5 12 12 5"/>
-          </svg>
-          <span class="foot-text">Retour à</span>
-          <a routerLink="/auth/login" class="foot-link">la connexion</a>
-        </div>
+        <button
+          class="fb-btn fb-btn--block auth-submit"
+          type="button"
+          [disabled]="!codeComplete() || loading()"
+          (click)="submit()"
+        >
+          <span class="fb-spinner" *ngIf="loading()" aria-hidden="true"></span>
+          <mat-icon *ngIf="!loading()">verified_user</mat-icon>
+          {{ loading() ? 'Vérification…' : 'Valider le code' }}
+        </button>
 
+        <p class="security-note">
+          <mat-icon>lock</mat-icon>
+          Ce code est à usage unique et valable 5 minutes. Ne le partagez jamais, y compris avec le support FamilyBalance.
+        </p>
+
+        <footer class="auth-card-foot">
+          <a routerLink="/auth/login"><mat-icon>arrow_back</mat-icon>Retour à la connexion</a>
+        </footer>
       </div>
     </section>
   `,
   styles: [`
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    .shell {
-      min-height: 100vh;
-      background:
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 500'%3E%3Ccircle cx='680' cy='90' r='140' fill='none' stroke='rgba(13,122,111,0.18)' stroke-width='2'/%3E%3Ccircle cx='90' cy='420' r='90' fill='rgba(201,161,92,0.16)'/%3E%3Ccircle cx='60' cy='70' r='36' fill='rgba(13,122,111,0.13)'/%3E%3Cpath d='M-20,300 C160,240 280,360 440,300 C600,240 720,360 880,300' fill='none' stroke='rgba(13,122,111,0.16)' stroke-width='3'/%3E%3Cpath d='M-20,350 C160,300 280,400 440,350 C600,300 720,400 880,350' fill='none' stroke='rgba(201,161,92,0.16)' stroke-width='3'/%3E%3C/svg%3E") center/cover no-repeat,
-        var(--fb-bg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem 1rem;
-      font-family: var(--font-sans, system-ui, sans-serif);
-    }
-
-    /* ── Card ── */
-    .card {
-      width: 100%;
-      max-width: 420px;
-      background: var(--fb-surface-strong);
-      border: 0.5px solid var(--fb-border);
-      border-radius: 16px;
-      overflow: hidden;
-    }
-
-    /* ── En-tête ── */
-    .card-top {
-      padding: 2rem 2rem 1.5rem;
-      border-bottom: 0.5px solid var(--fb-border);
-    }
-
-    .logo-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 1.75rem;
-    }
-
-    .logo-ic {
-      width: 34px;
-      height: 34px;
-      flex-shrink: 0;
-    }
-
-    .logo-name {
-      font-family: Georgia, 'Times New Roman', serif;
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-    }
-
-    .logo-name-family { color: #1c3a5e; }
-    .logo-name-balance { color: var(--fb-primary); }
-
-    /* ── Stepper ── */
-    .steps {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 1.5rem;
-    }
-
-    .step {
-      flex: 1;
-      height: 3px;
-      border-radius: 2px;
-      background: var(--fb-bg);
-      transition: background .3s;
-    }
-
-    .step.done   { background: var(--fb-primary); }
-    .step.active { background: rgba(var(--fb-primary-rgb), .45); }
-
-    /* ── Icône & titre ── */
-    .icon-wrap {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      background: var(--fb-primary-soft);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 1rem;
-    }
-
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
-      border-radius: 20px;
-      background: var(--fb-primary-soft);
-      color: var(--fb-primary-strong);
-      font-size: 11px;
-      font-weight: 500;
-      margin-bottom: .875rem;
-    }
-
-    .card-title {
-      font-size: 20px;
-      font-weight: 500;
-      color: var(--fb-text);
-      margin-bottom: 6px;
-    }
-
-    .card-sub {
-      font-size: 13px;
-      color: var(--fb-text);
-      line-height: 1.5;
-    }
-
-    /* ── Corps ── */
-    .card-body { padding: 1.5rem 2rem; }
+    .auth-card-head .fb-eyebrow { margin-bottom: 8px; }
 
     .email-chip {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 5px 12px;
-      border-radius: 8px;
-      background: var(--fb-bg);
-      border: 0.5px solid var(--fb-border);
-      font-size: 12px;
-      color: var(--fb-text);
-      margin-bottom: 1.25rem;
-      font-weight: 500;
+      margin-top: 14px;
+      padding: 6px 12px;
+      border-radius: var(--fb-radius-pill);
+      background: var(--fb-surface-alt);
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--fb-text-mid);
     }
 
-    /* ── Messages ── */
-    .msg {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      font-size: 12px;
-      line-height: 1.4;
-      margin-bottom: 1rem;
-      border: 0.5px solid;
-    }
+    .email-chip mat-icon { width: 18px; height: 18px; font-size: 18px; }
 
-    .msg svg { flex-shrink: 0; margin-top: 1px; }
+    .fb-alert { margin-bottom: 18px; }
 
-    .msg.success {
-      background: rgba(var(--fb-success-rgb), 0.12);
-      color: var(--fb-success);
-      border-color: rgba(var(--fb-success-rgb), 0.5);
-    }
-
-    .msg.error {
-      background: rgba(var(--fb-danger-rgb), 0.08);
-      color: var(--fb-danger);
-      border-color: rgba(var(--fb-danger-rgb), 0.4);
-    }
-
-    /* ── OTP ── */
     .otp-row {
       display: flex;
-      gap: 8px;
       justify-content: center;
-      margin-bottom: 1.25rem;
+      gap: 10px;
+      margin-bottom: 18px;
     }
 
     .otp-input {
-      width: 44px;
-      height: 52px;
-      border-radius: 8px;
-      border: 0.5px solid var(--fb-border-strong);
-      background: var(--fb-surface-strong);
+      width: 50px;
+      height: 58px;
+      border: 1.5px solid var(--fb-border-strong);
+      border-radius: 14px;
+      background: var(--fb-surface);
       color: var(--fb-text);
-      font-size: 20px;
-      font-weight: 500;
+      font-family: var(--fb-font-mono);
+      font-size: 22px;
+      font-weight: 600;
       text-align: center;
-      outline: none;
-      font-family: var(--font-mono, monospace);
-      transition: border-color .15s, box-shadow .15s;
       caret-color: transparent;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
     }
 
     .otp-input:focus {
       border-color: var(--fb-primary);
-      box-shadow: 0 0 0 3px rgba(var(--fb-primary-rgb), .12);
+      box-shadow: 0 0 0 4px rgba(var(--fb-primary-rgb), 0.12);
     }
 
     .otp-input.filled {
@@ -353,149 +144,64 @@ import { AuthService } from '../../../core/services/auth.service';
     }
 
     .otp-input.err {
-      border-color: rgba(var(--fb-danger-rgb), 0.4);
-      background: #FCEBEB;
+      border-color: rgba(var(--fb-danger-rgb), 0.5);
+      background: rgba(var(--fb-danger-rgb), 0.05);
     }
 
-    /* ── Animation shake ── */
-    .shake { animation: shake .4s ease; }
+    .shake { animation: shake 0.4s ease; }
 
     @keyframes shake {
-      0%, 100% { transform: translateX(0);  }
-      20%       { transform: translateX(-6px); }
-      40%       { transform: translateX(6px);  }
-      60%       { transform: translateX(-4px); }
-      80%       { transform: translateX(4px);  }
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-6px); }
+      40% { transform: translateX(6px); }
+      60% { transform: translateX(-4px); }
+      80% { transform: translateX(4px); }
     }
 
-    /* ── Timer ── */
     .timer-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 1.25rem;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+      font-size: 13.5px;
     }
 
-    .timer {
-      font-size: 12px;
-      color: var(--fb-muted);
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .timer-val {
-      font-weight: 500;
-      color: var(--fb-text);
-      font-variant-numeric: tabular-nums;
-    }
-
-    .timer-val.expired {
-      color: var(--fb-danger);
-    }
+    .timer { display: inline-flex; align-items: center; gap: 6px; color: var(--fb-muted); }
+    .timer mat-icon { width: 18px; height: 18px; font-size: 18px; }
+    .timer-val { color: var(--fb-text); font-variant-numeric: tabular-nums; }
+    .timer-val.expired { color: var(--fb-danger); }
 
     .resend-btn {
-      font-size: 12px;
-      color: var(--fb-primary);
+      padding: 6px 0;
+      border: none;
       background: none;
-      border: none;
-      cursor: pointer;
-      font-family: inherit;
-      padding: 0;
-      font-weight: 500;
-      transition: opacity .15s;
-    }
-
-    .resend-btn:disabled {
-      color: var(--fb-muted);
-      cursor: not-allowed;
-    }
-
-    /* ── Bouton principal ── */
-    .submit-btn {
-      width: 100%;
-      height: 48px;
-      border-radius: 12px;
-      border: none;
-      background: linear-gradient(135deg, var(--fb-primary) 0%, var(--fb-primary-strong) 100%);
-      color: white;
-      font-size: 0.95rem;
+      color: var(--fb-primary);
       font-weight: 700;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      font-family: inherit;
-      transition: opacity .15s;
     }
 
-    .submit-btn:hover:not(:disabled) { opacity: .88; }
-    .submit-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .resend-btn:hover:not(:disabled) { text-decoration: underline; }
+    .resend-btn:disabled { color: var(--fb-faint); cursor: not-allowed; }
 
-    /* ── Spinner ── */
-    .spinner {
-      width: 15px;
-      height: 15px;
-      border: 2px solid rgba(255, 255, 255, .3);
-      border-top-color: white;
-      border-radius: 50%;
-      animation: spin .7s linear infinite;
-      flex-shrink: 0;
-    }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Note sécurité ── */
     .security-note {
-      margin-top: 1rem;
       display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      padding: 10px 12px;
-      background: var(--fb-bg);
-      border-radius: 8px;
-      border: 0.5px solid var(--fb-border);
+      gap: 10px;
+      margin: 18px 0 0;
+      padding: 12px 14px;
+      border-radius: var(--fb-radius-sm);
+      background: var(--fb-surface-alt);
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--fb-text-mid);
     }
 
-    .security-note p {
-      font-size: 11px;
-      color: var(--fb-muted);
-      line-height: 1.4;
-      margin: 0;
-    }
-
-    /* ── Pied ── */
-    .card-foot {
-      padding: .875rem 2rem;
-      border-top: 0.5px solid var(--fb-border);
-      background: var(--fb-bg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-    }
-
-    .back-icon { color: var(--fb-muted); }
-
-    .foot-text {
-      font-size: 11px;
-      color: var(--fb-muted);
-    }
-
-    .foot-link {
-      font-size: 11px;
-      color: var(--fb-primary);
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .foot-link:hover { text-decoration: underline; }
+    .security-note mat-icon { flex-shrink: 0; width: 18px; height: 18px; font-size: 18px; color: var(--fb-muted); }
 
     @media (max-width: 480px) {
-      .card-top { padding: 1.5rem 1.25rem 1rem; }
       .otp-row { gap: 6px; }
-      .otp-input { width: 38px; height: 46px; font-size: 18px; }
+      .otp-input { width: 42px; height: 50px; font-size: 19px; }
     }
   `],
 })
@@ -560,12 +266,13 @@ export class MfaVerifyPage implements OnInit, OnDestroy {
     }, 1000);
   }
 
+  /**
+   * L'API n'expose pas d'envoi d'un nouveau code : c'est la connexion qui crée
+   * un nouveau défi MFA et envoie le code. On renvoie donc l'utilisateur vers la
+   * connexion plutôt que d'afficher une confirmation d'envoi qui n'a pas eu lieu.
+   */
   resendCode(): void {
-    this.clearInputs();
-    this.errorMessage.set('');
-    this.timerSeconds.set(299);
-    this.startTimer();
-    this.successMessage.set('Un nouveau code a été envoyé à votre adresse e-mail.');
+    this.router.navigateByUrl('/auth/login');
   }
 
   /* ── Gestion des cases OTP ── */

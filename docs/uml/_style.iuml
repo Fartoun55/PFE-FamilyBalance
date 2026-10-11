@@ -1,0 +1,71 @@
+' Charte graphique commune à tous les diagrammes FamilyBalance
+' (couleurs alignées sur l'application : encre #0E1726, sarcelle #0D7A6F, ambre #F89810)
+!pragma layout smetana
+skinparam dpi 150
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 12
+skinparam defaultFontColor #0E1726
+skinparam titleFontSize 18
+skinparam titleFontStyle bold
+skinparam ArrowColor #475569
+skinparam ArrowFontColor #334155
+skinparam ArrowFontSize 11
+skinparam backgroundColor #FFFFFF
+
+skinparam package {
+  BackgroundColor #F7F9FD
+  BorderColor #94A3B8
+  FontStyle bold
+}
+
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #0D7A6F
+  HeaderBackgroundColor #E3F3F1
+  AttributeFontSize 11
+  StereotypeFontColor #B45A00
+}
+
+skinparam enum {
+  BackgroundColor #FDEFD6
+  BorderColor #B45A00
+}
+
+skinparam note {
+  BackgroundColor #FFFBEB
+  BorderColor #D97706
+  FontSize 11
+}
+
+skinparam actor {
+  BackgroundColor #E3F3F1
+  BorderColor #0D7A6F
+}
+
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #0D7A6F
+  ArrowColor #475569
+}
+
+skinparam rectangle {
+  BorderColor #94A3B8
+  FontStyle bold
+}
+
+skinparam sequence {
+  LifeLineBorderColor #94A3B8
+  LifeLineBackgroundColor #E3F3F1
+  ParticipantBackgroundColor #FFFFFF
+  ParticipantBorderColor #0D7A6F
+  ActorBackgroundColor #E3F3F1
+  ActorBorderColor #0D7A6F
+  DatabaseBackgroundColor #F7F9FD
+  DatabaseBorderColor #475569
+  GroupBackgroundColor #F1F5F9
+  GroupBorderColor #94A3B8
+  BoxBorderColor #CBD5E1
+  DividerBackgroundColor #EEF3FB
+}

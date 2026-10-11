@@ -1,12 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, ElementRef, ViewChild, signal } from '@angular/core';
-import { Router } from '@angular/router';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
+import { Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
-import { MatListModule } from '@angular/material/list';
-import { MatDividerModule } from '@angular/material/divider';
-import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { FamilyDashboardService } from '../../../core/services/family-dashboard.service';
 import {
   FamilyDashboardChild,
@@ -15,110 +10,139 @@ import {
 import { AuthService } from '../../../core/services/auth.service';
 import { ChildContextService } from '../../../core/services/child-context.service';
 import { StatCardComponent } from '../../../shared/components/stat-card/stat-card.component';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
+import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
+import { CHART_INK, CHART_SERIES } from '../../../shared/chart-palette';
 
 type ChartModule = typeof import('chart.js/auto');
 
 @Component({
   selector: 'app-family-dashboard-page',
   standalone: true,
-  imports: [CommonModule, MatButtonModule, MatCardModule, MatIconModule, MatListModule, MatDividerModule, MatProgressBarModule, StatCardComponent],
+  imports: [CommonModule, RouterLink, MatIconModule, StatCardComponent, PageHeaderComponent, EmptyStateComponent],
   template: `
-    <section class="family-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Dashboard Famille</p>
-          <h1>Suivi des profils enfants</h1>
-          <p>Vue globale, évolution des scores et rappels de réévaluation tous les 3 mois.</p>
-        </div>
-      </header>
+    <app-page-header
+      eyebrow="Tableau de bord famille"
+      title="Suivi des profils enfants"
+      subtitle="Vue d'ensemble, évolution des scores et rappels de réévaluation tous les 3 mois."
+      illustration="family-dashboard"
+    >
+      <a class="fb-btn fb-btn--ghost" routerLink="/family/add-adolescent">
+        <mat-icon>person_add</mat-icon>
+        Ajouter un adolescent
+      </a>
+    </app-page-header>
 
-      <p class="error" *ngIf="errorMessage()">{{ errorMessage() }}</p>
+    <div class="fb-alert fb-alert--error block" role="alert" *ngIf="errorMessage()">
+      <mat-icon>error_outline</mat-icon><span>{{ errorMessage() }}</span>
+    </div>
 
-      <div class="kpi-row" *ngIf="overview() as data">
-        <app-stat-card icon="people" label="Enfants rattachés" [value]="data.totalChildren" tone="primary"></app-stat-card>
-        <app-stat-card icon="timer" label="Rappels en attente" [value]="data.dueReminders" tone="warning"></app-stat-card>
-        <app-stat-card icon="insights" label="Score moyen" [value]="(computeAverageScore(data) | number:'1.0-0') + '/100'" tone="accent"></app-stat-card>
+    <div class="fb-loading" *ngIf="!overview() && !errorMessage()">
+      <span class="fb-spinner"></span>
+      Chargement du tableau de bord…
+    </div>
+
+    <ng-container *ngIf="overview() as data">
+      <div class="kpi-row">
+        <app-stat-card icon="groups" label="Enfants rattachés" [value]="data.totalChildren" tone="primary"></app-stat-card>
+        <app-stat-card icon="event_repeat" label="Réévaluations à faire" [value]="data.dueReminders" tone="warning"></app-stat-card>
+        <app-stat-card
+          icon="insights"
+          label="Score moyen"
+          [value]="computeAverageScore(data) === null ? '—' : computeAverageScore(data) + '/100'"
+          tone="accent"
+        ></app-stat-card>
       </div>
 
-      <div class="layout" *ngIf="overview() as data">
-        <aside class="children-list">
-          <div class="children-header">
-            <h2>Profils enfants</h2>
-            <button mat-icon-button aria-label="Ajouter enfant" (click)="goAddAdolescent()"><mat-icon>person_add</mat-icon></button>
-          </div>
-          <div class="child-scroll">
+      <div class="fb-card" *ngIf="!data.children.length">
+        <app-empty-state
+          icon="family_restroom"
+          illustration="add-child"
+          title="Aucun enfant rattaché pour le moment"
+          message="Ajoutez le profil de votre adolescent pour démarrer une évaluation et suivre son évolution."
+        >
+          <a class="fb-btn" routerLink="/family/add-adolescent"><mat-icon>person_add</mat-icon>Ajouter un adolescent</a>
+        </app-empty-state>
+      </div>
+
+      <div class="layout" *ngIf="data.children.length">
+        <aside class="fb-card children" aria-label="Profils enfants">
+          <h2 class="section-title">Profils enfants</h2>
+          <div class="child-list">
             <button
               type="button"
-              class="child-card"
+              class="child"
               *ngFor="let item of data.children"
               [class.active]="selectedChild()?._id === item.child._id"
+              [attr.aria-pressed]="selectedChild()?._id === item.child._id"
               (click)="selectChild(item)"
             >
-              <div class="avatar">
+              <span class="avatar">
                 <img *ngIf="item.child.avatarUrl; else initialsTpl" [src]="item.child.avatarUrl" [alt]="item.child.firstName + ' ' + item.child.lastName" />
-                <ng-template #initialsTpl><div class="initials">{{ item.child.firstName.charAt(0) }}{{ item.child.lastName.charAt(0) }}</div></ng-template>
-              </div>
-              <div class="child-main">
+                <ng-template #initialsTpl>{{ item.child.firstName.charAt(0) }}{{ item.child.lastName.charAt(0) }}</ng-template>
+              </span>
+              <span class="child-main">
                 <strong>{{ item.child.firstName }} {{ item.child.lastName }}</strong>
-                <p class="muted">{{ formatDate(item.child.birthDate) }}</p>
-              </div>
-              <div
-                class="score-badge"
+                <small>Né(e) le {{ formatDate(item.child.birthDate) }}</small>
+              </span>
+              <span
+                class="score"
                 [class.low]="item.latestRecord && item.latestRecord.globalScore < 50"
-                [class.medium]="item.latestRecord && item.latestRecord.globalScore >=50 && item.latestRecord.globalScore < 75"
+                [class.medium]="item.latestRecord && item.latestRecord.globalScore >= 50 && item.latestRecord.globalScore < 75"
                 [class.high]="item.latestRecord && item.latestRecord.globalScore >= 75"
                 [attr.aria-label]="item.latestRecord ? 'Score ' + (item.latestRecord.globalScore | number:'1.0-0') + ' sur 100, ' + riskCategoryLabel(item.latestRecord.riskCategory) : 'Score non disponible'"
               >
-                {{ item.latestRecord ? (item.latestRecord.globalScore | number:'1.0-0') : '-' }}
-              </div>
+                {{ item.latestRecord ? (item.latestRecord.globalScore | number:'1.0-0') : '—' }}
+              </span>
             </button>
           </div>
         </aside>
 
-        <section class="content" *ngIf="selectedChildData() as selected">
-          <div class="content-head">
-            <div>
+        <section class="detail" *ngIf="selectedChildData() as selected">
+          <div class="fb-card detail-head">
+            <div class="detail-id">
               <h2>{{ selected.child.firstName }} {{ selected.child.lastName }}</h2>
-              <p>{{ selected.child.email }} · Naissance: {{ formatDate(selected.child.birthDate) }}</p>
+              <p>{{ selected.child.email }} · Né(e) le {{ formatDate(selected.child.birthDate) }}</p>
             </div>
-            <div class="content-head-actions">
-              <button mat-stroked-button color="primary" type="button" (click)="startSurveyForChild(selected.child)">
+            <div class="detail-actions">
+              <button class="fb-btn fb-btn--accent" type="button" (click)="startSurveyForChild(selected.child)">
                 <mat-icon>quiz</mat-icon>
                 Démarrer le questionnaire
               </button>
-              <button mat-stroked-button color="primary" type="button" (click)="viewDetailedScore(selected.child)">
+              <button class="fb-btn fb-btn--ghost" type="button" (click)="viewDetailedScore(selected.child)">
                 <mat-icon>insights</mat-icon>
                 Score détaillé
               </button>
-              <button mat-flat-button color="primary" type="button" [disabled]="pdfDownloading()" (click)="downloadPdf(selected.child._id)">
-                {{ pdfDownloading() ? 'Export en cours...' : 'Export PDF' }}
+              <button class="fb-btn fb-btn--ghost" type="button" [disabled]="pdfDownloading()" (click)="downloadPdf(selected.child._id)">
+                <mat-icon>picture_as_pdf</mat-icon>
+                {{ pdfDownloading() ? 'Export en cours…' : 'Exporter le bilan' }}
               </button>
             </div>
+
+            <dl class="facts">
+              <div>
+                <dt>Dernier score global</dt>
+                <dd>{{ selected.latestRecord ? (selected.latestRecord.globalScore | number:'1.0-0') + '/100' : '—' }}</dd>
+              </div>
+              <div>
+                <dt>Niveau de risque</dt>
+                <dd>{{ riskCategoryLabel(selected.latestRecord?.riskCategory) }}</dd>
+              </div>
+              <div>
+                <dt>Réévaluation</dt>
+                <dd [class.due]="selected.reminders.due">
+                  {{ selected.reminders.due ? 'À faire maintenant' : formatDate(selected.reminders.nextReevaluationDate) }}
+                </dd>
+              </div>
+            </dl>
           </div>
 
-          <div class="kpis">
-            <article>
-              <span>Dernier score global</span>
-              <strong>{{ selected.latestRecord?.globalScore !== null && selected.latestRecord ? (selected.latestRecord.globalScore | number:'1.0-0') : '-' }}</strong>
-            </article>
-            <article>
-              <span>Risque</span>
-              <strong>{{ riskCategoryLabel(selected.latestRecord?.riskCategory) }}</strong>
-            </article>
-            <article>
-              <span>Réévaluation</span>
-              <strong>{{ selected.reminders.due ? 'À faire maintenant' : formatDate(selected.reminders.nextReevaluationDate) }}</strong>
-            </article>
-          </div>
-
-          <div class="coach-card" *ngIf="selected.latestRecord?.recommendations?.length">
-            <div class="coach-icon">
-              <mat-icon>tips_and_updates</mat-icon>
-            </div>
+          <div class="coach" *ngIf="selected.latestRecord?.recommendations?.length">
+            <mat-icon>tips_and_updates</mat-icon>
             <div class="coach-body">
-              <span class="coach-eyebrow">Conseil de votre coach FamilyBalance</span>
+              <span class="fb-eyebrow">Le conseil FamilyBalance</span>
               <p>{{ selected.latestRecord!.recommendations[0] }}</p>
-              <details class="coach-more" *ngIf="selected.latestRecord!.recommendations.length > 1">
+              <details *ngIf="selected.latestRecord!.recommendations.length > 1">
                 <summary>Voir {{ selected.latestRecord!.recommendations.length - 1 }} conseil(s) de plus</summary>
                 <ul>
                   <li *ngFor="let tip of selected.latestRecord!.recommendations.slice(1)">{{ tip }}</li>
@@ -127,137 +151,228 @@ type ChartModule = typeof import('chart.js/auto');
             </div>
           </div>
 
-          <div class="chart-card" *ngIf="selected.history.length; else noHistoryTpl">
+          <div class="fb-card" *ngIf="selected.history.length; else noHistoryTpl">
             <div class="chart-toolbar">
-              <h3>Évolution des scores</h3>
-              <div class="range-buttons">
-                <button type="button" class="range-btn" [class.active]="selectedRange() === 'all'" (click)="setRange('all')">Toutes</button>
-                <button type="button" class="range-btn" [class.active]="selectedRange() === '30'" (click)="setRange('30')">30 jours</button>
-                <button type="button" class="range-btn" [class.active]="selectedRange() === '90'" (click)="setRange('90')">3 mois</button>
-                <button type="button" class="range-btn" [class.active]="selectedRange() === '365'" (click)="setRange('365')">12 mois</button>
+              <h3 class="section-title">Évolution des scores</h3>
+              <div class="segmented" role="group" aria-label="Période">
+                <button
+                  type="button"
+                  *ngFor="let option of rangeOptions"
+                  [class.active]="selectedRange() === option.id"
+                  [attr.aria-pressed]="selectedRange() === option.id"
+                  (click)="setRange(option.id)"
+                >
+                  {{ option.label }}
+                </button>
               </div>
             </div>
-            <canvas #trendCanvas></canvas>
+            <div class="chart-box"><canvas #trendCanvas aria-label="Évolution du score global et des sous-scores"></canvas></div>
           </div>
           <ng-template #noHistoryTpl>
-            <div class="chart-card empty">Aucun historique de score disponible pour cet enfant.</div>
+            <div class="fb-card">
+              <app-empty-state
+                icon="show_chart"
+                title="Pas encore de score"
+                message="Lancez un premier questionnaire pour suivre l'évolution de cet enfant dans le temps."
+              ></app-empty-state>
+            </div>
           </ng-template>
 
-          <div class="right-column">
-            <div class="notifications">
-              <h3>Centre de notifications</h3>
-              <div class="notification" *ngIf="selected.reminders.due">
-                <strong>Réévaluation due</strong>
-                <p>La réévaluation de l’enfant est due aujourd’hui. Vérifiez le score et planifiez une nouvelle analyse.</p>
-              </div>
-              <div class="notification" *ngIf="!selected.reminders.due">
-                <strong>Prochaine réévaluation</strong>
-                <p>Prévue le {{ formatDate(selected.reminders.nextReevaluationDate) }} (dans {{ selected.reminders.daysRemaining }} jours).</p>
-              </div>
-              <div class="notification" *ngFor="let alert of selected.openAlerts">
-                <strong>Alarme clinique</strong>
-                <p>{{ alert.message }}</p>
-              </div>
-              <p class="notification empty" *ngIf="!selected.reminders.due && !selected.openAlerts.length">Aucune notification active pour le moment.</p>
+          <div class="two-col">
+            <div class="fb-card">
+              <h3 class="section-title">Notifications</h3>
+              <ul class="feed">
+                <li class="notice warn" *ngIf="selected.reminders.due">
+                  <mat-icon>event_repeat</mat-icon>
+                  <div><strong>Réévaluation due</strong><p>La réévaluation est due aujourd'hui. Vérifiez le score et planifiez une nouvelle analyse.</p></div>
+                </li>
+                <li class="notice" *ngIf="!selected.reminders.due">
+                  <mat-icon>event</mat-icon>
+                  <div>
+                    <strong>Prochaine réévaluation</strong>
+                    <p>Prévue le {{ formatDate(selected.reminders.nextReevaluationDate) }} (dans {{ selected.reminders.daysRemaining }} jours).</p>
+                  </div>
+                </li>
+                <li class="notice danger" *ngFor="let alert of selected.openAlerts">
+                  <mat-icon>report</mat-icon>
+                  <div><strong>Alerte clinique</strong><p>{{ alert.message }}</p></div>
+                </li>
+              </ul>
             </div>
 
-            <mat-card class="activity-card">
-              <h3>Dernières activités</h3>
-              <mat-divider></mat-divider>
-              <mat-list>
-                <mat-list-item *ngFor="let h of (selected.history || []).slice(-6).reverse()">
-                  <mat-icon matListIcon>history</mat-icon>
-                  <div matLine>Score calculé: {{ h.globalScore | number:'1.0-0' }}</div>
-                  <div matLine class="muted small">{{ formatDate(h.calculatedAt) }}</div>
-                </mat-list-item>
-                <div *ngIf="!(selected.history && selected.history.length)" class="muted">Aucune activité récente.</div>
-              </mat-list>
-            </mat-card>
+            <div class="fb-card">
+              <h3 class="section-title">Dernières activités</h3>
+              <ul class="feed" *ngIf="selected.history.length; else noActivity">
+                <li class="activity" *ngFor="let h of selected.history.slice(-6).reverse()">
+                  <mat-icon>history</mat-icon>
+                  <div><strong>Score calculé : {{ h.globalScore | number:'1.0-0' }}/100</strong><p>{{ formatDate(h.calculatedAt) }}</p></div>
+                </li>
+              </ul>
+              <ng-template #noActivity><p class="muted">Aucune activité récente.</p></ng-template>
+            </div>
           </div>
         </section>
       </div>
-    </section>
+    </ng-container>
   `,
   styles: [
     `
-      :host { display: block; background: var(--fb-bg); color: var(--fb-text); }
-      .family-shell { max-width: 1240px; margin: 0 auto; padding: 1.5rem 1rem 2.5rem; display: grid; gap: 1.5rem; }
-      .hero { display: flex; justify-content: space-between; gap: 1rem; align-items: center; border-radius: 24px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 400'%3E%3Ccircle cx='700' cy='70' r='120' fill='none' stroke='rgba(255,255,255,0.20)' stroke-width='2'/%3E%3Ccircle cx='630' cy='330' r='60' fill='rgba(255,255,255,0.14)'/%3E%3Ccircle cx='50' cy='50' r='34' fill='rgba(255,255,255,0.11)'/%3E%3Cpath d='M-20,250 C140,190 260,310 420,250 C580,190 700,310 860,250' fill='none' stroke='rgba(255,255,255,0.22)' stroke-width='3'/%3E%3Cpath d='M-20,300 C140,250 260,350 420,300 C580,250 700,350 860,300' fill='none' stroke='rgba(255,255,255,0.14)' stroke-width='3'/%3E%3C/svg%3E") center/cover no-repeat, linear-gradient(135deg, var(--fb-primary-strong) 0%, var(--fb-primary) 100%); padding: 1.8rem 2rem; color: #fff; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12); }
-      .hero .eyebrow { margin: 0 0 0.75rem; color: rgba(255, 255, 255, 0.8); font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.14em; }
-      .hero h1 { margin: 0; font-size: clamp(2rem, 3vw, 2.8rem); line-height: 1.05; }
-      .hero p { margin: 0.75rem 0 0; color: rgba(255, 255, 255, 0.85); max-width: 720px; }
-      .error { color: var(--fb-danger); margin: 0; padding: 0.75rem 1rem; border: 1px solid rgba(192,57,43,.3); border-radius: 14px; background: rgba(192,57,43,.06); }
-      .kpi-row { display: grid; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .layout { display: grid; grid-template-columns: 360px 1fr; gap: 1.25rem; }
-      .children-list { border-radius: 24px; background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%); padding: 1rem; border: 1px solid rgba(148, 163, 184, 0.14); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7); }
-      .children-header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 0.75rem; }
-      .children-header h2 { margin:0; font-size: 1.05rem; }
-      .child-scroll { display:grid; gap: 0.75rem; max-height: 620px; overflow:auto; padding-right: 0.25rem; }
-      .child-card { text-align: left; border: 1px solid transparent; background: #f8fbff; border-radius: 16px; padding: 0.9rem; display: grid; grid-template-columns: auto 1fr auto; gap: 0.8rem; align-items: center; cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
-      .child-card:hover { transform: translateY(-1px); box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06); }
-      .child-card.active { border-color: var(--fb-primary); background: var(--fb-primary-soft); }
-      .avatar { width: 54px; height: 54px; border-radius: 18px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:var(--fb-primary-soft); margin-right:0; }
-      .avatar img { width:100%; height:100%; object-fit:cover; }
-      .initials { font-weight:700; color:var(--fb-primary); font-size:1rem; }
-      .child-main { display:flex; flex-direction:column; gap: 0.2rem; }
-      .child-main strong { font-size: 1rem; color: var(--fb-text); }
-      .child-main .muted { margin:0; color:var(--fb-muted); font-size:0.9rem; }
-      .score-badge { min-width: 62px; text-align:center; padding:0.5rem 0.7rem; border-radius: 999px; font-weight:700; font-size:0.95rem; color:var(--fb-text); }
-      .score-badge.low { background:rgba(192,57,43,.12); color:var(--fb-danger); }
-      .score-badge.medium { background:rgba(183,121,31,.15); color:var(--fb-warning); }
-      .score-badge.high { background:rgba(21,127,69,.14); color:var(--fb-success); }
-      .content { border-radius: 24px; background: #ffffff; padding: 1.25rem; border: 1px solid rgba(148, 163, 184, 0.14); box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06); display: grid; gap: 1.25rem; }
-      .content-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
-      .content-head-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-      .content-head h2 { margin: 0; font-size: 1.5rem; }
-      .content-head p { margin: 0.35rem 0 0; color: var(--fb-muted); }
-      .kpis { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; }
-      .kpis article { border-radius: 18px; background: var(--fb-bg); padding: 1rem; display: grid; gap: 0.5rem; border: 1px solid rgba(148, 163, 184, 0.12); }
-      .kpis span { color: var(--fb-muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.12em; }
-      .kpis strong { font-size: 1.5rem; color: var(--fb-text); }
-      .coach-card { display: flex; gap: 1rem; align-items: flex-start; border-radius: 20px; background: linear-gradient(135deg, rgba(var(--fb-accent-rgb),.1), rgba(var(--fb-primary-rgb),.06)); border: 1px solid rgba(var(--fb-accent-rgb),.22); padding: 1.1rem 1.3rem; }
-      .coach-icon { width: 42px; height: 42px; border-radius: 14px; background: #fff; display: grid; place-items: center; flex-shrink: 0; box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08); }
-      .coach-icon mat-icon { color: var(--fb-accent-strong); }
-      .coach-body { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
-      .coach-eyebrow { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fb-accent-strong); }
-      .coach-body p { margin: 0; color: var(--fb-text); font-weight: 600; line-height: 1.5; }
-      .coach-more { font-size: 0.85rem; color: var(--fb-muted); }
-      .coach-more summary { cursor: pointer; color: var(--fb-primary); font-weight: 600; }
-      .coach-more ul { margin: 0.5rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.35rem; }
-      .chart-card { border-radius: 24px; background: #ffffff; padding: 1.2rem; border: 1px solid rgba(148, 163, 184, 0.14); box-shadow: 0 16px 32px rgba(15, 23, 42, 0.06); }
-      .chart-card h3 { margin: 0 0 1rem; font-size: 1.1rem; }
-      .chart-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
-      .range-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-      .range-btn { border: 1px solid rgba(var(--fb-primary-rgb), 0.18); background: var(--fb-primary-soft); color: var(--fb-primary); border-radius: 999px; padding: 0.55rem 0.95rem; cursor: pointer; transition: background 0.15s ease, color 0.15s ease; }
-      .range-btn.active { background: var(--fb-primary); color: #ffffff; border-color: var(--fb-primary); }
-      .right-column { display: grid; gap: 1rem; }
-      .activity-card { border-radius: 24px; background: #ffffff; border: 1px solid rgba(148, 163, 184, 0.14); box-shadow: 0 16px 32px rgba(15, 23, 42, 0.06); padding: 1rem; }
-      .activity-card h3 { margin: 0 0 0.75rem; }
-      .notifications { border-radius: 24px; background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%); padding: 1rem; border: 1px solid rgba(102, 211, 153, 0.22); display: grid; gap: 1rem; }
-      .notifications h3 { margin: 0; font-size: 1rem; }
-      .notification { border-radius: 18px; background: #ffffff; border: 1px solid rgba(134, 239, 172, 0.35); padding: 0.95rem 1rem; box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05); }
-      .notification.empty { background: transparent; border: none; box-shadow: none; color: var(--fb-muted); }
-      .notification strong { display: block; margin-bottom: 0.4rem; color: var(--fb-text); }
-      .notification p { margin: 0; color: var(--fb-muted); }
-      mat-list-item { border-radius: 16px; margin-bottom: 0.45rem; }
-      mat-list-item:last-child { margin-bottom: 0; }
-      mat-divider { margin: 1rem 0; }
+      :host { display: block; }
+      .block { margin-bottom: 20px; }
+      .kpi-row { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 24px; }
+      .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; align-items: start; }
+      .section-title { margin: 0; font-size: 17px; font-weight: 700; }
+      .muted { margin: 12px 0 0; color: var(--fb-muted); font-size: 14px; }
+
+      /* Liste des enfants */
+      .children { position: sticky; top: 92px; padding: 18px; }
+      .children .section-title { margin: 2px 4px 12px; }
+      .child-list { display: grid; gap: 6px; max-height: 560px; overflow: auto; }
+      .child {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding: 10px;
+        border: 1.5px solid transparent;
+        border-radius: 16px;
+        background: transparent;
+        color: var(--fb-text);
+        text-align: left;
+        cursor: pointer;
+      }
+      .child:hover { background: var(--fb-surface-alt); }
+      .child.active { border-color: rgba(var(--fb-primary-rgb), 0.35); background: var(--fb-primary-soft); }
+      .avatar {
+        display: grid;
+        place-items: center;
+        width: 46px;
+        height: 46px;
+        overflow: hidden;
+        border-radius: 15px;
+        background: var(--fb-accent-soft);
+        color: var(--fb-accent-strong);
+        font-weight: 700;
+      }
+      .avatar img { width: 100%; height: 100%; object-fit: cover; }
+      .child-main { display: flex; flex-direction: column; min-width: 0; }
+      .child-main strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .child-main small { color: var(--fb-muted); font-size: 13px; }
+      .score {
+        min-width: 46px;
+        padding: 6px 10px;
+        border-radius: var(--fb-radius-pill);
+        background: var(--fb-surface-alt);
+        color: var(--fb-text-mid);
+        font-weight: 700;
+        font-size: 14px;
+        text-align: center;
+      }
+      .score.low { background: rgba(var(--fb-danger-rgb), 0.08); color: var(--fb-danger); }
+      .score.medium { background: var(--fb-accent-soft); color: var(--fb-warning-ink); }
+      .score.high { background: rgba(var(--fb-success-rgb), 0.1); color: var(--fb-success-ink); }
+
+      /* Détail */
+      .detail { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+      .detail-head { display: grid; gap: 18px; }
+      .detail-id h2 { margin: 0; font-size: 1.6rem; }
+      .detail-id p { margin: 4px 0 0; color: var(--fb-text-mid); overflow-wrap: anywhere; }
+      .detail-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin: 0;
+        border-radius: 16px;
+        background: var(--fb-surface-alt);
+      }
+      .facts div { padding: 14px 16px; }
+      .facts div + div { border-left: 1px solid var(--fb-border); }
+      .facts dt { font-size: 12.5px; color: var(--fb-muted); }
+      .facts dd { margin: 4px 0 0; font-family: var(--fb-font-serif); font-size: 1.25rem; font-weight: 650; }
+      .facts dd.due { color: var(--fb-accent-strong); }
+
+      .coach {
+        display: flex;
+        gap: 14px;
+        padding: 20px 22px;
+        border-radius: var(--fb-radius-md);
+        background: var(--fb-ink);
+        color: var(--fb-on-ink);
+      }
+      .coach > mat-icon { flex-shrink: 0; color: var(--fb-accent); }
+      .coach-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+      .coach .fb-eyebrow { color: var(--fb-accent-hover); }
+      .coach p { margin: 0; font-size: 15.5px; line-height: 1.55; color: #fff; }
+      .coach details { font-size: 14px; color: var(--fb-on-ink-mid); }
+      .coach summary { cursor: pointer; font-weight: 700; color: var(--fb-accent-hover); }
+      .coach ul { display: grid; gap: 6px; margin: 8px 0 0; padding-left: 18px; }
+
+      .chart-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+      .segmented { display: inline-flex; padding: 4px; border-radius: var(--fb-radius-pill); background: var(--fb-surface-alt); }
+      .segmented button {
+        padding: 6px 14px;
+        border: none;
+        border-radius: var(--fb-radius-pill);
+        background: transparent;
+        color: var(--fb-text-mid);
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .segmented button.active { background: var(--fb-surface); color: var(--fb-text); box-shadow: var(--fb-elev-1); }
+      .chart-box { position: relative; height: 300px; }
+
+      .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      .feed { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
+      .feed li { display: flex; gap: 12px; align-items: flex-start; }
+      .feed mat-icon {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        padding: 8px;
+        font-size: 20px;
+        border-radius: 12px;
+        background: var(--fb-surface-alt);
+        color: var(--fb-text-mid);
+      }
+      .feed strong { display: block; font-size: 14.5px; }
+      .feed p { margin: 2px 0 0; color: var(--fb-text-mid); font-size: 13.5px; line-height: 1.45; }
+      .notice.warn mat-icon { background: var(--fb-accent-soft); color: var(--fb-accent-strong); }
+      .notice.danger mat-icon { background: rgba(var(--fb-danger-rgb), 0.08); color: var(--fb-danger); }
+
+      @media (max-width: 1280px) {
+        .two-col { grid-template-columns: minmax(0, 1fr); }
+      }
       @media (max-width: 1024px) {
-        .kpi-row { grid-template-columns: 1fr; }
-        .layout { grid-template-columns: 1fr; }
-        .kpis { grid-template-columns: 1fr; }
+        .layout { grid-template-columns: minmax(0, 1fr); }
+        .children { position: static; }
       }
       @media (max-width: 768px) {
-        .hero { flex-direction: column; text-align: center; }
-        .content-head { flex-direction: column; align-items: stretch; }
-        .child-card { grid-template-columns: 1fr; align-items: start; }
-        .children-list { padding: 0.85rem; }
+        .kpi-row { grid-template-columns: 1fr; }
+        .facts { grid-template-columns: 1fr; }
+        .facts div + div { border-left: none; border-top: 1px solid var(--fb-border); }
+        .detail-actions .fb-btn { flex: 1 1 100%; }
+        .chart-box { height: 240px; }
       }
     `,
   ],
 })
 export class FamilyDashboardPage implements AfterViewInit {
-  @ViewChild('trendCanvas') trendCanvas?: ElementRef<HTMLCanvasElement>;
+  trendCanvas?: ElementRef<HTMLCanvasElement>;
+
+  /**
+   * Le canvas n'existe qu'une fois les données chargées (*ngIf) : on dessine le
+   * graphique dès qu'il apparaît, sinon le premier rendu (ngAfterViewInit /
+   * microtâche) passait avant sa création et le graphique restait vide.
+   */
+  @ViewChild('trendCanvas')
+  set trendCanvasRef(ref: ElementRef<HTMLCanvasElement> | undefined) {
+    const appeared = !!ref && ref !== this.trendCanvas;
+    this.trendCanvas = ref;
+    if (appeared) {
+      queueMicrotask(() => this.renderChart());
+    }
+  }
 
   readonly overview = signal<FamilyDashboardOverviewResponse | null>(null);
   readonly selectedChild = signal<FamilyDashboardChild['child'] | null>(null);
@@ -282,10 +397,6 @@ export class FamilyDashboardPage implements AfterViewInit {
     private readonly childContext: ChildContextService
   ) {
     this.loadOverview();
-  }
-
-  goAddAdolescent(): void {
-    this.router.navigateByUrl('/family/add-adolescent');
   }
 
   startSurveyForChild(child: { _id: string; firstName: string; birthDate?: string | null }): void {
@@ -330,12 +441,13 @@ export class FamilyDashboardPage implements AfterViewInit {
     });
   }
 
-  computeAverageScore(data: FamilyDashboardOverviewResponse): number {
-    if (!data || !data.children || !data.children.length) return 0;
+  /** Moyenne des derniers scores ; null tant qu'aucun enfant n'a de score (affiché « — », pas « 0 »). */
+  computeAverageScore(data: FamilyDashboardOverviewResponse): number | null {
+    if (!data || !data.children || !data.children.length) return null;
     const values = data.children
       .map((c) => (c.latestRecord ? c.latestRecord.globalScore : null))
       .filter((v): v is number => v !== null && v !== undefined);
-    if (!values.length) return 0;
+    if (!values.length) return null;
     const sum = values.reduce((a, b) => a + b, 0);
     return Math.round(sum / values.length);
   }
@@ -393,18 +505,43 @@ export class FamilyDashboardPage implements AfterViewInit {
       data: {
         labels,
         datasets: [
-          { label: 'Global', data: history.map((p) => p.globalScore), borderColor: '#0d7a6f', tension: 0.3 },
-          { label: 'Comportemental', data: history.map((p) => p.subScores.comportemental), borderColor: '#ef4444', tension: 0.3 },
-          { label: 'Emotionnel', data: history.map((p) => p.subScores.emotionnel), borderColor: '#8b5cf6', tension: 0.3 },
-          { label: 'Social', data: history.map((p) => p.subScores.social), borderColor: '#0ea5e9', tension: 0.3 },
-          { label: 'Parental', data: history.map((p) => p.subScores.parental), borderColor: '#16a34a', tension: 0.3 },
-        ],
+          { label: 'Global', data: history.map((p) => p.globalScore) },
+          { label: 'Comportemental', data: history.map((p) => p.subScores.comportemental) },
+          { label: 'Émotionnel', data: history.map((p) => p.subScores.emotionnel) },
+          { label: 'Social', data: history.map((p) => p.subScores.social) },
+          { label: 'Parental', data: history.map((p) => p.subScores.parental) },
+        ].map((dataset, index) => ({
+          ...dataset,
+          borderColor: CHART_SERIES[index],
+          backgroundColor: CHART_SERIES[index],
+          borderWidth: index === 0 ? 3 : 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          tension: 0.3,
+        })),
       },
       options: {
         responsive: true,
-        maintainAspectRatio: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { usePointStyle: true, boxWidth: 8, color: CHART_INK.text, font: { family: CHART_INK.font, size: 12 } },
+          },
+          tooltip: { backgroundColor: '#0e1726', padding: 10, cornerRadius: 8, usePointStyle: true },
+        },
         scales: {
-          y: { min: 0, max: 100 },
+          x: { grid: { display: false }, ticks: { color: CHART_INK.text, font: { family: CHART_INK.font } } },
+          y: {
+            min: 0,
+            max: 100,
+            border: { display: false },
+            grid: { color: CHART_INK.grid },
+            ticks: { stepSize: 25, color: CHART_INK.text, font: { family: CHART_INK.font } },
+          },
         },
       },
     });
@@ -436,13 +573,13 @@ export class FamilyDashboardPage implements AfterViewInit {
       'risque-modere': 'Risque modéré',
       'risque-eleve': 'Risque élevé',
     };
-    return category ? labels[category] || category : '-';
+    return category ? labels[category] || category : '—';
   }
 
   formatDate(value?: string | null): string {
-    if (!value) return '-';
+    if (!value) return '—';
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '-';
+    if (Number.isNaN(date.getTime())) return '—';
     return date.toLocaleDateString('fr-FR');
   }
 

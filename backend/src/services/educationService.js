@@ -6,6 +6,7 @@ const NewsletterDigest = require('../models/NewsletterDigest');
 const ScoreRecord = require('../models/ScoreRecord');
 const User = require('../models/User');
 const { deleteUploadedFile, verifyUploadedFileSignature } = require('../middleware/uploadMiddleware');
+const { notifyResourcePublished } = require('./notificationService');
 
 const LEARNING_PATHS = [
   {
@@ -263,9 +264,14 @@ const setResourceStatus = async (id, status) => {
     throw new AppError('Ressource introuvable.', 404);
   }
 
+  const wasPublished = resource.status === 'published';
   resource.status = status;
   resource.publishedAt = status === 'published' ? new Date() : resource.publishedAt;
   await resource.save();
+
+  if (status === 'published' && !wasPublished) {
+    notifyResourcePublished(resource);
+  }
 
   return resource.toJSON();
 };

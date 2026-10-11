@@ -1,0 +1,75 @@
+@startuml cu-vue-globale
+!include ../_style.iuml
+title Diagramme de cas d'utilisation — Vue globale de FamilyBalance
+left to right direction
+
+actor "Visiteur" as Visiteur
+actor "Utilisateur\nauthentifié" as Auth
+actor "Membre de\nla famille" as Famille
+actor "Parent" as Parent
+actor "Adolescent" as Ado
+actor "Spécialiste" as Spe
+actor "Administrateur" as Admin
+actor "Service e-mail\n(SMTP)" as Mail <<système>>
+
+Auth <|-- Famille
+Famille <|-- Parent
+Famille <|-- Ado
+Auth <|-- Spe
+Auth <|-- Admin
+
+rectangle "FamilyBalance" {
+  package "Compte" {
+    usecase "S'inscrire" as UC_Register
+    usecase "S'authentifier" as UC_Login
+    usecase "Gérer son profil" as UC_Profile
+    usecase "Consulter ses\nnotifications" as UC_Notif
+  }
+  package "Évaluation" {
+    usecase "Passer un\nquestionnaire" as UC_Survey
+    usecase "Consulter ses\nrésultats" as UC_Score
+  }
+  package "Suivi familial" {
+    usecase "Ajouter un\nadolescent" as UC_AddAdo
+    usecase "Suivre les profils\nenfants" as UC_Family
+    usecase "Consulter son\nespace adolescent" as UC_AdoSpace
+  }
+  package "Téléconsultation" {
+    usecase "Réserver une\ntéléconsultation" as UC_Book
+    usecase "Gérer ses\nrendez-vous" as UC_Appt
+    usecase "Échanger par\nmessagerie sécurisée" as UC_Msg
+    usecase "Traiter les demandes\nde téléconsultation" as UC_Requests
+  }
+  package "Éducation" {
+    usecase "Consulter les ressources\néducatives" as UC_Res
+  }
+  package "Administration" {
+    usecase "Gérer les comptes\nutilisateurs" as UC_Accounts
+    usecase "Gérer les\nspécialistes" as UC_Specialists
+    usecase "Gérer les ressources\néducatives" as UC_AdminRes
+  }
+}
+
+Visiteur --> UC_Register
+Visiteur --> UC_Login
+Auth --> UC_Profile
+Auth --> UC_Notif
+Auth --> UC_Res
+Famille --> UC_Survey
+Famille --> UC_Score
+Famille --> UC_Book
+Famille --> UC_Appt
+Famille --> UC_Msg
+Parent --> UC_AddAdo
+Parent --> UC_Family
+Ado --> UC_AdoSpace
+Spe --> UC_Requests
+Spe --> UC_Appt
+Spe --> UC_Msg
+Admin --> UC_Accounts
+Admin --> UC_Specialists
+Admin --> UC_AdminRes
+
+UC_Register --> Mail
+UC_Login --> Mail
+@enduml

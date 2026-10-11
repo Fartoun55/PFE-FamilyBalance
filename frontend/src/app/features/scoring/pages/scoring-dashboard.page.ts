@@ -1,161 +1,178 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { ScoringService } from '../../../core/services/scoring.service';
 import { ChildContextService } from '../../../core/services/child-context.service';
 import { RiskAlert, ScorePeriodStat, ScoreRecord } from '../models/scoring.models';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-scoring-dashboard-page',
   standalone: true,
-  imports: [CommonModule, MatCardModule, MatButtonModule, MatIconModule, EmptyStateComponent],
+  imports: [CommonModule, MatIconModule, EmptyStateComponent, PageHeaderComponent],
   template: `
-    <section class="score-shell">
-      <div class="child-context-banner" *ngIf="childContext.selectedChildId()">
-        <mat-icon>face</mat-icon>
-        <p>Score de <strong>{{ childContext.selectedChildName() }}</strong></p>
-        <button mat-stroked-button type="button" (click)="childContext.clear(); refreshAll()">Voir mon propre score</button>
-      </div>
+    <app-page-header
+      eyebrow="Résultats"
+      title="Suivi des résultats"
+      subtitle="Score global sur 100 et sous-scores comportemental, émotionnel, social et parental, suivis dans le temps."
+      illustration="results"
+    >
+      <button
+        class="fb-btn fb-btn--ghost"
+        type="button"
+        (click)="calculateLatest()"
+        [disabled]="loading() || !latestCompletedSessionId()"
+      >
+        <mat-icon>refresh</mat-icon>
+        {{ loading() ? 'Calcul…' : 'Recalculer' }}
+      </button>
+      <button class="fb-btn" type="button" (click)="downloadPdfReport()" [disabled]="loading() || !latestRecord()">
+        <mat-icon>picture_as_pdf</mat-icon>
+        Exporter en PDF
+      </button>
+    </app-page-header>
 
-      <header class="score-hero">
-        <div class="hero-top">
-          <p class="kicker">Algorithme de scoring</p>
+    <div class="child-banner" *ngIf="childContext.selectedChildId()">
+      <mat-icon>face</mat-icon>
+      <p>Résultats de <strong>{{ childContext.selectedChildName() }}</strong></p>
+      <button class="fb-btn fb-btn--ghost fb-btn--sm" type="button" (click)="childContext.clear(); refreshAll()">Voir mes propres résultats</button>
+    </div>
+
+    <div class="fb-alert fb-alert--error block" role="alert" *ngIf="errorMessage()">
+      <mat-icon>error_outline</mat-icon><span>{{ errorMessage() }}</span>
+    </div>
+    <div class="fb-alert fb-alert--success block" role="status" *ngIf="successMessage()">
+      <mat-icon>check_circle</mat-icon><span>{{ successMessage() }}</span>
+    </div>
+    <p class="hint" *ngIf="!latestCompletedSessionId()">
+      <mat-icon>info</mat-icon>
+      Aucune évaluation terminée pour le moment : le recalcul sera possible après un questionnaire complet.
+    </p>
+
+    <div class="grid" *ngIf="latestRecord(); else emptyTpl">
+      <!-- Score global -->
+      <section class="fb-card gauge-card">
+        <h2 class="section-title">Score global</h2>
+        <div class="gauge" [style.--score]="latestRecord()!.globalScore" [style.--tone]="riskColor()" role="img" [attr.aria-label]="'Score global ' + (latestRecord()!.globalScore | number: '1.0-0') + ' sur 100'">
+          <div class="gauge-inner">
+            <strong>{{ latestRecord()!.globalScore | number: '1.0-0' }}</strong>
+            <span>sur 100</span>
+          </div>
         </div>
-        <h1>Suivi longitudinal des risques</h1>
-        <p>Lecture des sous-scores comportemental, émotionnel, social et parental avec score global 0-100.</p>
-      </header>
+        <p class="risk" [style.color]="riskColor()"><mat-icon>flag</mat-icon>{{ riskCategoryLabel() }}</p>
+        <div class="weights">
+          <span class="fb-badge fb-badge--neutral">Tranche d'âge {{ latestRecord()!.ageSegment }}</span>
+          <span class="fb-badge fb-badge--neutral" *ngFor="let item of weightEntries()">
+            {{ item.dimension }} {{ item.value | percent:'1.0-0' }}
+          </span>
+        </div>
+      </section>
 
-      <mat-card class="toolbar">
-        <button
-          mat-flat-button
-          color="primary"
-          (click)="calculateLatest()"
-          [disabled]="loading() || !latestCompletedSessionId()"
-        >
-          {{ loading() ? 'Calcul...' : 'Recalculer depuis la dernière session complétée' }}
-        </button>
-        <button mat-stroked-button color="primary" (click)="downloadPdfReport()" [disabled]="loading() || !latestRecord()">
-          Export PDF
-        </button>
-        <span class="muted" *ngIf="!latestCompletedSessionId()">Aucune session survey complétée trouvée.</span>
-      </mat-card>
+      <!-- Radar -->
+      <section class="fb-card radar-card">
+        <h2 class="section-title">Sous-scores</h2>
+        <svg viewBox="-50 0 400 300" class="radar" role="img" aria-label="Radar des sous-scores">
+          <polygon class="ring" points="150,30 270,150 150,270 30,150"></polygon>
+          <polygon class="ring" points="150,60 240,150 150,240 60,150"></polygon>
+          <polygon class="ring" points="150,90 210,150 150,210 90,150"></polygon>
+          <polygon class="ring" points="150,120 180,150 150,180 120,150"></polygon>
+          <line x1="150" y1="30" x2="150" y2="270"></line>
+          <line x1="30" y1="150" x2="270" y2="150"></line>
+          <polygon class="shape" [attr.points]="radarPoints()"></polygon>
+          <text x="150" y="20">Émotionnel</text>
+          <text x="10" y="138" text-anchor="start">Comportemental</text>
+          <text x="290" y="138" text-anchor="end">Social</text>
+          <text x="150" y="292">Parental</text>
+        </svg>
+        <dl class="subscores">
+          <div><dt>Comportemental</dt><dd>{{ latestRecord()!.subScores.comportemental | number: '1.0-0' }}</dd></div>
+          <div><dt>Émotionnel</dt><dd>{{ latestRecord()!.subScores.emotionnel | number: '1.0-0' }}</dd></div>
+          <div><dt>Social</dt><dd>{{ latestRecord()!.subScores.social | number: '1.0-0' }}</dd></div>
+          <div><dt>Parental</dt><dd>{{ latestRecord()!.subScores.parental | number: '1.0-0' }}</dd></div>
+        </dl>
+      </section>
 
-      <div class="grid" *ngIf="latestRecord(); else emptyTpl">
-        <mat-card class="score-card gauge-card">
-          <h2>Score global</h2>
-          <div class="gauge" [style.--score]="latestRecord()!.globalScore" [style.--tone]="riskColor()">
-            <div class="gauge-inner">
-              <strong>{{ latestRecord()!.globalScore | number: '1.0-0' }}</strong>
-              <span>/ 100</span>
-            </div>
-          </div>
-          <p class="risk" [style.color]="riskColor()">Catégorie: {{ riskCategoryLabel() }}</p>
-          <div class="age-weight">
-            <span class="meta-item">Tranche d’âge : <strong>{{ latestRecord()!.ageSegment }}</strong></span>
-            <div class="weights">
-              <span class="weight-pill" *ngFor="let item of weightEntries()">
-                {{ item.dimension }} : {{ item.value | percent:'1.0-0' }}
-              </span>
-            </div>
-          </div>
-        </mat-card>
-
-        <mat-card class="score-card method-card">
-          <h2>Méthodologie</h2>
-          <p>
-            Chaque réponse est normalisée sur une échelle 0–100 selon son type, puis agrégée
-            en quatre sous-scores. Le score global est ensuite calculé avec une pondération dynamique
-            basée sur la tranche d’âge sélectionnée.
-          </p>
-          <ul>
-            <li>Comportemental, émotionnel, social, parental</li>
-            <li>Pondérations ajustées par tranche d’âge</li>
-            <li>Score global 0–100 et niveau de risque</li>
-            <li>Suivi longitudinal sur 3, 6 et 12 mois</li>
-          </ul>
-        </mat-card>
-
-        <mat-card class="score-card radar-card">
-          <h2>Radar des sous-scores</h2>
-          <svg viewBox="0 0 300 300" class="radar-svg" role="img" aria-label="Radar des sous-scores">
-            <polygon class="grid-1" points="150,30 270,150 150,270 30,150"></polygon>
-            <polygon class="grid-2" points="150,60 240,150 150,240 60,150"></polygon>
-            <polygon class="grid-3" points="150,90 210,150 150,210 90,150"></polygon>
-            <polygon class="grid-4" points="150,120 180,150 150,180 120,150"></polygon>
-            <line x1="150" y1="30" x2="150" y2="270"></line>
-            <line x1="30" y1="150" x2="270" y2="150"></line>
-            <polygon class="shape" [attr.points]="radarPoints()"></polygon>
-            <text x="150" y="22">Emotionnel</text>
-            <text x="7" y="155">Comportemental</text>
-            <text x="278" y="155">Social</text>
-            <text x="150" y="292">Parental</text>
-          </svg>
-        </mat-card>
-
-        <mat-card class="score-card reco-card">
-          <h2>Recommandations personnalisées</h2>
-          <p class="reco-note">Ces recommandations sont recalculées automatiquement à chaque nouvelle évaluation.</p>
+      <!-- Recommandations -->
+      <section class="reco">
+        <mat-icon>tips_and_updates</mat-icon>
+        <div>
+          <span class="fb-eyebrow">Recommandations personnalisées</span>
           <ul>
             <li *ngFor="let rec of latestRecord()!.recommendations">{{ rec }}</li>
           </ul>
-        </mat-card>
+          <p>Elles sont recalculées automatiquement à chaque nouvelle évaluation.</p>
+        </div>
+      </section>
 
-        <mat-card class="score-card history-card">
-          <h2>Historique (3, 6, 12 mois)</h2>
-          <div class="window-filters">
-            <button class="chip" [class.active]="selectedWindow() === 'all'" (click)="setWindow('all')">Tout</button>
-            <button class="chip" [class.active]="selectedWindow() === 3" (click)="setWindow(3)">3 mois</button>
-            <button class="chip" [class.active]="selectedWindow() === 6" (click)="setWindow(6)">6 mois</button>
-            <button class="chip" [class.active]="selectedWindow() === 12" (click)="setWindow(12)">12 mois</button>
+      <!-- Alertes -->
+      <section class="fb-card alerts" *ngIf="openAlerts().length">
+        <h2 class="section-title">Alertes automatiques</h2>
+        <div class="alert-item" *ngFor="let alert of openAlerts()">
+          <mat-icon>warning</mat-icon>
+          <div><strong>Risque élevé</strong><p>{{ alert.message }}</p></div>
+        </div>
+      </section>
+
+      <!-- Historique -->
+      <section class="fb-card history">
+        <div class="history-head">
+          <h2 class="section-title">Historique</h2>
+          <div class="segmented" role="group" aria-label="Période">
+            <button type="button" [class.active]="selectedWindow() === 'all'" [attr.aria-pressed]="selectedWindow() === 'all'" (click)="setWindow('all')">Tout</button>
+            <button type="button" [class.active]="selectedWindow() === 3" [attr.aria-pressed]="selectedWindow() === 3" (click)="setWindow(3)">3 mois</button>
+            <button type="button" [class.active]="selectedWindow() === 6" [attr.aria-pressed]="selectedWindow() === 6" (click)="setWindow(6)">6 mois</button>
+            <button type="button" [class.active]="selectedWindow() === 12" [attr.aria-pressed]="selectedWindow() === 12" (click)="setWindow(12)">12 mois</button>
           </div>
+        </div>
 
-          <div class="period-grid">
-            <article *ngFor="let item of periodStats()" class="period-card">
-              <h3>{{ item.months }} mois</h3>
-              <p>Moyenne: <strong>{{ item.averageGlobalScore ?? '-' }}</strong></p>
-              <p>Dernier: <strong>{{ item.latestGlobalScore ?? '-' }}</strong></p>
-              <small>Vert {{ item.riskDistribution.green }} | Orange {{ item.riskDistribution.orange }} | Rouge {{ item.riskDistribution.red }}</small>
-            </article>
-          </div>
+        <div class="periods">
+          <article *ngFor="let item of periodStats()" class="period">
+            <h3>{{ item.months }} mois</h3>
+            <p>Moyenne <strong>{{ item.averageGlobalScore ?? '—' }}</strong></p>
+            <p>Dernier <strong>{{ item.latestGlobalScore ?? '—' }}</strong></p>
+            <small>
+              <span class="pip ok"></span>{{ item.riskDistribution.green }}
+              <span class="pip warn"></span>{{ item.riskDistribution.orange }}
+              <span class="pip bad"></span>{{ item.riskDistribution.red }}
+            </small>
+          </article>
+        </div>
 
-          <div class="trend-chart" *ngIf="filteredTrendRecords().length > 1">
-            <div class="legend">
-              <span><i class="dot global"></i>Global</span>
-              <span><i class="dot comportemental"></i>Comportemental</span>
-              <span><i class="dot emotionnel"></i>Emotionnel</span>
-              <span><i class="dot social"></i>Social</span>
-              <span><i class="dot parental"></i>Parental</span>
-            </div>
+        <div class="trend" *ngIf="filteredTrendRecords().length > 1">
+          <ul class="legend">
+            <li><i class="s1"></i>Global</li>
+            <li><i class="s2"></i>Comportemental</li>
+            <li><i class="s3"></i>Émotionnel</li>
+            <li><i class="s4"></i>Social</li>
+            <li><i class="s5"></i>Parental</li>
+          </ul>
+          <svg viewBox="0 0 760 280" class="trend-svg" role="img" aria-label="Courbes d'évolution des scores">
+            <line *ngFor="let y of yGrid" class="gridline" [attr.x1]="50" [attr.y1]="toY(y)" [attr.x2]="730" [attr.y2]="toY(y)"></line>
+            <text *ngFor="let y of yGrid" x="40" [attr.y]="toY(y) + 4" class="axis-y">{{ y }}</text>
+            <path class="line s2" [attr.d]="buildLinePath('comportemental')"></path>
+            <path class="line s3" [attr.d]="buildLinePath('emotionnel')"></path>
+            <path class="line s4" [attr.d]="buildLinePath('social')"></path>
+            <path class="line s5" [attr.d]="buildLinePath('parental')"></path>
+            <path class="line s1 main" [attr.d]="buildLinePath('globalScore')"></path>
+            <g *ngFor="let item of filteredTrendRecords(); let i = index">
+              <circle class="point" [attr.cx]="toX(i)" [attr.cy]="toY(item.globalScore)" r="5">
+                <title>{{ item.calculatedAt | date: 'dd/MM/yyyy' }} — global {{ item.globalScore | number: '1.0-0' }}</title>
+              </circle>
+              <text class="axis-x" [attr.x]="toX(i)" y="270">{{ item.calculatedAt | date: 'dd/MM' }}</text>
+            </g>
+          </svg>
+        </div>
+        <p class="muted" *ngIf="filteredTrendRecords().length <= 1">Au moins 2 mesures sont nécessaires pour afficher les courbes d'évolution.</p>
 
-            <svg viewBox="0 0 760 280" class="trend-svg" role="img" aria-label="Courbes d'évolution des scores">
-              <line *ngFor="let y of yGrid" [attr.x1]="50" [attr.y1]="toY(y)" [attr.x2]="730" [attr.y2]="toY(y)"></line>
-              <text *ngFor="let y of yGrid" x="44" [attr.y]="toY(y) + 4" class="axis-y">{{ y }}</text>
-
-              <path class="line global" [attr.d]="buildLinePath('globalScore')"></path>
-              <path class="line comportemental" [attr.d]="buildLinePath('comportemental')"></path>
-              <path class="line emotionnel" [attr.d]="buildLinePath('emotionnel')"></path>
-              <path class="line social" [attr.d]="buildLinePath('social')"></path>
-              <path class="line parental" [attr.d]="buildLinePath('parental')"></path>
-
-              <g *ngFor="let item of filteredTrendRecords(); let i = index">
-                <circle class="point global" [attr.cx]="toX(i)" [attr.cy]="toY(item.globalScore)" r="3"></circle>
-                <text class="axis-x" [attr.x]="toX(i)" y="270">{{ item.calculatedAt | date: 'MM/yy' }}</text>
-              </g>
-            </svg>
-          </div>
-
-          <p class="muted" *ngIf="filteredTrendRecords().length <= 1">Au moins 2 mesures sont nécessaires pour afficher les courbes d'évolution.</p>
-
+        <div class="fb-table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Date</th>
                 <th>Global</th>
                 <th>Comportemental</th>
-                <th>Emotionnel</th>
+                <th>Émotionnel</th>
                 <th>Social</th>
                 <th>Parental</th>
                 <th>Catégorie</th>
@@ -163,8 +180,8 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
             </thead>
             <tbody>
               <tr *ngFor="let row of filteredHistoryRecords()">
-                <td>{{ row.calculatedAt | date: 'shortDate' }}</td>
-                <td>{{ row.globalScore | number: '1.0-0' }}</td>
+                <td>{{ row.calculatedAt | date: 'dd/MM/yyyy' }}</td>
+                <td><strong>{{ row.globalScore | number: '1.0-0' }}</strong></td>
                 <td>{{ row.subScores.comportemental | number: '1.0-0' }}</td>
                 <td>{{ row.subScores.emotionnel | number: '1.0-0' }}</td>
                 <td>{{ row.subScores.social | number: '1.0-0' }}</td>
@@ -173,372 +190,164 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
               </tr>
             </tbody>
           </table>
-        </mat-card>
+        </div>
+      </section>
 
-        <mat-card class="score-card alert-card" *ngIf="openAlerts().length">
-          <h2>Alertes automatiques</h2>
-          <div class="alert" *ngFor="let alert of openAlerts()">
-            <mat-icon>warning</mat-icon>
-            <div>
-              <strong>Risque élevé</strong>
-              <p>{{ alert.message }}</p>
-            </div>
-          </div>
-        </mat-card>
+      <!-- Méthodologie -->
+      <details class="fb-card fb-card--tint method">
+        <summary><mat-icon>help_outline</mat-icon>Comment ce score est-il calculé ?</summary>
+        <p>
+          Chaque réponse est normalisée sur une échelle de 0 à 100 selon son type, puis agrégée en quatre
+          sous-scores. Le score global applique ensuite une pondération qui dépend de la tranche d'âge.
+          Plus le score est élevé, plus l'équilibre est bon.
+        </p>
+      </details>
+    </div>
+
+    <ng-template #emptyTpl>
+      <div class="fb-card">
+        <app-empty-state
+          icon="query_stats"
+          illustration="survey"
+          title="Aucun score disponible"
+          message="Terminez un questionnaire pour afficher le score, les sous-scores et les recommandations."
+        ></app-empty-state>
       </div>
-
-      <ng-template #emptyTpl>
-        <mat-card class="score-card empty">
-          <app-empty-state
-            icon="query_stats"
-            title="Aucun score disponible"
-            message="Complétez un survey puis lancez le calcul pour afficher la jauge et les recommandations."
-          ></app-empty-state>
-        </mat-card>
-      </ng-template>
-
-      <p class="error" *ngIf="errorMessage()">{{ errorMessage() }}</p>
-      <p class="success" *ngIf="successMessage()">{{ successMessage() }}</p>
-    </section>
+    </ng-template>
   `,
   styles: [
     `
-      .score-shell {
-        max-width: 1180px;
-        margin: 0 auto;
-        padding: 1.5rem 1rem 3rem;
-        display: grid;
-        gap: 1rem;
-        background: radial-gradient(circle at top, rgba(var(--fb-primary-rgb), 0.08), transparent 32%), var(--fb-bg);
-      }
-      .child-context-banner {
+      :host { display: block; }
+      .block { margin-bottom: 20px; }
+      .hint { display: flex; align-items: center; gap: 8px; margin: 0 0 20px; color: var(--fb-text-mid); font-size: 14px; }
+      .hint mat-icon { width: 20px; height: 20px; font-size: 20px; color: var(--fb-muted); }
+      .muted { margin: 0 0 16px; color: var(--fb-muted); font-size: 14px; }
+      .section-title { margin: 0 0 16px; font-size: 17px; font-weight: 700; }
+
+      .child-banner {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        padding: 0.85rem 1.1rem;
-        border-radius: 14px;
-        background: var(--fb-primary-soft);
-        border: 1px solid rgba(var(--fb-primary-rgb), 0.25);
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+        padding: 14px 18px;
+        border-radius: var(--fb-radius-md);
+        background: var(--fb-primary-tint);
         color: var(--fb-primary-strong);
       }
-      .child-context-banner p { margin: 0; flex: 1; font-size: 0.9rem; }
-      .score-hero {
-        background: linear-gradient(135deg, var(--fb-primary-strong) 0%, var(--fb-primary) 100%);
-        color: #ffffff;
-        border-radius: 30px;
-        padding: 2rem 2rem 1.9rem;
-        box-shadow: 0 30px 70px rgba(var(--fb-primary-rgb), 0.2);
-      }
-      .hero-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-        flex-wrap: wrap;
-        margin-bottom: 0.75rem;
-      }
-      .kicker {
-        margin: 0;
-        font-size: 0.82rem;
-        letter-spacing: 0.22em;
-        text-transform: uppercase;
-        opacity: 0.85;
-      }
-      .score-hero h1 {
-        margin: 0 0 0.55rem;
-        font-size: clamp(2rem, 3vw, 2.8rem);
-        line-height: 1.05;
-      }
-      .score-hero p {
-        margin: 0;
-        max-width: 720px;
-        color: rgba(255, 255, 255, 0.88);
-        font-size: 1rem;
-        line-height: 1.8;
-      }
-      .toolbar {
-        padding: 1rem 1.1rem;
-        display: flex;
-        gap: 0.9rem;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        border-radius: 24px;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        background: #ffffff;
-        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
-      }
-      .toolbar button {
-        min-width: 220px;
-      }
-      .window-filters {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-        margin: 0 0 0.8rem;
-      }
-      .chip {
-        border: 1px solid var(--fb-border);
-        background: #ffffff;
-        border-radius: 999px;
-        font-size: 12px;
-        padding: 0.45rem 0.95rem;
-        cursor: pointer;
-        transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-      }
-      .chip.active {
-        background: var(--fb-primary-soft);
-        border-color: var(--fb-primary);
-        color: var(--fb-primary-strong);
-      }
-      .muted { color: var(--fb-muted); font-size: 13px; }
-      .grid {
-        display: grid;
-        gap: 1rem;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      }
-      .score-card {
-        padding: 1.4rem;
-        border-radius: 24px;
-        border: 1px solid rgba(148, 163, 184, 0.14);
-        background: #ffffff;
-        box-shadow: 0 24px 50px rgba(15, 23, 42, 0.05);
-      }
-      .gauge-card,
-      .radar-card,
-      .reco-card,
-      .alert-card { min-height: 280px; }
-      .history-card { grid-column: 1 / -1; }
+      .child-banner p { flex: 1; margin: 0; }
+
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+      .history, .reco, .method { grid-column: 1 / -1; }
+
+      /* Jauge */
+      .gauge-card { display: flex; flex-direction: column; align-items: center; text-align: center; }
+      .gauge-card .section-title { align-self: flex-start; }
       .gauge {
         --score: 0;
-        --tone: #157f45;
+        --tone: var(--fb-success);
+        display: grid;
+        place-items: center;
         width: 190px;
         height: 190px;
         border-radius: 50%;
-        margin: 0.5rem auto;
-        background: conic-gradient(var(--tone) calc(var(--score) * 1%), var(--fb-border) 0);
-        display: grid;
-        place-items: center;
-        box-shadow: inset 0 0 0 6px rgba(255, 255, 255, 0.85);
+        background: conic-gradient(var(--tone) calc(var(--score) * 1%), var(--fb-sunken) 0);
       }
       .gauge-inner {
-        width: 142px;
-        height: 142px;
-        background: #ffffff;
-        border-radius: 50%;
         display: grid;
         place-items: center;
-        text-align: center;
-        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
-      }
-      .gauge-inner strong { font-size: 38px; line-height: 1; }
-      .gauge-inner span { font-size: 12px; color: #64748b; }
-      .risk { text-align: center; font-weight: 800; font-size: 1rem; color: var(--fb-text); letter-spacing: 0.01em; }
-      .age-weight {
-        margin-top: 0.95rem;
-        display: grid;
-        gap: 0.45rem;
-        text-align: center;
-      }
-      .method-card {
-        min-height: 220px;
-        background: linear-gradient(180deg, #ffffff 0%, var(--fb-bg) 100%);
-        border: 1px solid var(--fb-border);
-      }
-      .method-card h2 {
-        margin-bottom: 0.65rem;
-      }
-      .method-card p {
-        margin: 0 0 0.95rem;
-        color: var(--fb-muted);
-        line-height: 1.75;
-      }
-      .method-card ul {
-        margin: 0;
-        padding-left: 1.2rem;
-        color: var(--fb-muted);
-        font-size: 13px;
-      }
-      .method-card li {
-        margin-bottom: 0.5rem;
-      }
-      .meta-item {
-        color: var(--fb-muted);
-        font-size: 0.95rem;
-      }
-      .weights {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 0.45rem;
-      }
-      .weight-pill {
-        padding: 0.4rem 0.85rem;
-        border-radius: 999px;
-        background: var(--fb-primary-soft);
-        color: var(--fb-primary-strong);
-        font-size: 12px;
-        border: 1px solid rgba(var(--fb-primary-rgb), 0.2);
-      }
-      .radar-svg {
-        width: 100%;
-        max-width: 300px;
-        display: block;
-        margin: 0 auto;
-      }
-      .radar-svg polygon,
-      .radar-svg line {
-        fill: none;
-        stroke: #d1d5db;
-        stroke-width: 1.2;
-      }
-      .radar-svg .shape {
-        fill: rgba(var(--fb-primary-rgb), 0.22);
-        stroke: var(--fb-primary);
-        stroke-width: 2;
-      }
-      .radar-svg text {
-        font-size: 11px;
-        fill: #334155;
-        text-anchor: middle;
-      }
-      .reco-card ul {
-        margin: 0;
-        padding-left: 1.15rem;
-        display: grid;
-        gap: 0.55rem;
-      }
-      .reco-note {
-        margin: 0 0 0.9rem;
-        font-size: 0.92rem;
-        color: #475569;
-      }
-      .period-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 0.9rem;
-        margin-bottom: 1rem;
-      }
-      .trend-chart {
-        border: 1px solid #d8e1ea;
-        border-radius: 18px;
-        padding: 0.9rem;
-        background: #ffffff;
-        margin-bottom: 1rem;
-        box-shadow: 0 16px 30px rgba(15, 23, 42, 0.04);
-      }
-      .legend {
-        display: flex;
-        gap: 0.9rem;
-        flex-wrap: wrap;
-        font-size: 12px;
-        color: #475569;
-        margin-bottom: 0.5rem;
-      }
-      .legend .dot {
-        display: inline-block;
-        width: 10px;
-        height: 10px;
+        align-content: center;
+        width: 150px;
+        height: 150px;
         border-radius: 50%;
-        margin-right: 0.35rem;
+        background: var(--fb-surface);
       }
-      .dot.global { background: var(--fb-primary); }
-      .dot.comportemental { background: #dc2626; }
-      .dot.emotionnel { background: #7c3aed; }
-      .dot.social { background: #0284c7; }
-      .dot.parental { background: #16a34a; }
-      .trend-svg {
-        width: 100%;
-        height: auto;
-      }
-      .trend-svg line {
-        stroke: #e2e8f0;
-        stroke-width: 1;
-      }
-      .line {
-        fill: none;
-        stroke-width: 2.6;
-      }
-      .line.global,
-      .point.global { stroke: var(--fb-primary); fill: var(--fb-primary); }
-      .line.comportemental { stroke: #dc2626; }
-      .line.emotionnel { stroke: #7c3aed; }
-      .line.social { stroke: #0284c7; }
-      .line.parental { stroke: #16a34a; }
-      .axis-y {
-        font-size: 11px;
-        text-anchor: end;
-        fill: #64748b;
-      }
-      .axis-x {
-        font-size: 11px;
-        text-anchor: middle;
-        fill: #64748b;
-      }
-      .period-card {
-        border: 1px solid #dfe7f1;
-        border-radius: 16px;
-        padding: 0.9rem;
-        background: #f8fbff;
-      }
-      .period-card h3,
-      .period-card p,
-      .period-card small { margin: 0; }
-      .period-card p { margin-top: 0.35rem; }
-      table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
-        border-radius: 18px;
-        overflow: hidden;
-        background: #ffffff;
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.05);
-      }
-      th,
-      td {
-        text-align: left;
-        padding: 0.85rem 0.9rem;
-        font-size: 12.7px;
-        color: #334155;
-      }
-      th {
-        background: #f8fafc;
-        color: #475569;
-        font-weight: 700;
-      }
-      tbody tr {
-        border-top: 1px solid #e5e7eb;
-      }
-      tbody tr:nth-child(even) {
-        background: #f8fafc;
-      }
-      .alert {
+      .gauge-inner strong { font-family: var(--fb-font-serif); font-size: 48px; font-weight: 650; line-height: 1; }
+      .gauge-inner span { font-size: 13px; color: var(--fb-muted); }
+      .risk { display: inline-flex; align-items: center; gap: 6px; margin: 18px 0 14px; font-weight: 700; font-size: 16px; }
+      .risk mat-icon { width: 20px; height: 20px; font-size: 20px; }
+      .weights { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+
+      /* Radar */
+      .radar { display: block; width: 100%; max-width: 360px; margin: 0 auto; }
+      .radar .ring, .radar line { fill: none; stroke: var(--fb-border); stroke-width: 1; }
+      .radar .shape { fill: rgba(var(--fb-primary-rgb), 0.18); stroke: var(--fb-primary); stroke-width: 2; stroke-linejoin: round; }
+      .radar text { font-family: var(--fb-font-sans); font-size: 12px; fill: var(--fb-text-mid); text-anchor: middle; }
+      .subscores { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 16px 0 0; }
+      .subscores div { padding: 10px; border-radius: 12px; background: var(--fb-surface-alt); text-align: center; }
+      .subscores dt { font-size: 11.5px; color: var(--fb-muted); }
+      .subscores dd { margin: 2px 0 0; font-weight: 700; font-size: 18px; }
+
+      /* Recommandations */
+      .reco {
         display: flex;
-        gap: 0.8rem;
-        align-items: flex-start;
-        border: 1px solid rgba(192,57,43,.28);
-        border-radius: 18px;
-        background: rgba(192,57,43,.06);
-        padding: 1rem;
+        gap: 14px;
+        padding: 24px;
+        border-radius: var(--fb-radius-md);
+        background: var(--fb-ink);
+        color: var(--fb-on-ink);
       }
-      .alert mat-icon { color: var(--fb-danger); }
-      .alert p { margin: 0.1rem 0 0; color: var(--fb-danger); }
-      .empty { text-align: center; }
-      .error { color: var(--fb-danger); }
-      .success { color: var(--fb-success); }
+      .reco > mat-icon { flex-shrink: 0; color: var(--fb-accent); }
+      .reco .fb-eyebrow { color: var(--fb-accent-hover); }
+      .reco ul { display: grid; gap: 8px; margin: 12px 0; padding-left: 18px; color: #fff; line-height: 1.5; }
+      .reco p { margin: 0; font-size: 13px; color: var(--fb-on-ink-dim); }
+
+      /* Alertes */
+      .alerts { grid-column: 1 / -1; }
+      .alert-item { display: flex; gap: 12px; padding: 12px 14px; border-radius: var(--fb-radius-sm); background: rgba(var(--fb-danger-rgb), 0.06); }
+      .alert-item + .alert-item { margin-top: 8px; }
+      .alert-item mat-icon { color: var(--fb-danger); }
+      .alert-item strong { color: var(--fb-danger); }
+      .alert-item p { margin: 2px 0 0; color: var(--fb-text-mid); font-size: 14px; }
+
+      /* Historique */
+      .history-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+      .history-head .section-title { margin: 0; }
+      .segmented { display: inline-flex; padding: 4px; border-radius: var(--fb-radius-pill); background: var(--fb-surface-alt); }
+      .segmented button { padding: 6px 14px; border: none; border-radius: var(--fb-radius-pill); background: transparent; color: var(--fb-text-mid); font-weight: 600; font-size: 13px; cursor: pointer; }
+      .segmented button.active { background: var(--fb-surface); color: var(--fb-text); box-shadow: var(--fb-elev-1); }
+
+      .periods { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 20px; }
+      .period { padding: 14px 16px; border-radius: 16px; background: var(--fb-surface-alt); }
+      .period h3 { margin: 0 0 6px; font-size: 14px; color: var(--fb-text-mid); }
+      .period p { display: flex; justify-content: space-between; margin: 2px 0; font-size: 14px; }
+      .period small { display: flex; align-items: center; gap: 4px; margin-top: 8px; font-size: 12.5px; color: var(--fb-muted); }
+      .pip { display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; }
+      .pip:first-child { margin-left: 0; }
+      .pip.ok { background: var(--fb-success); }
+      .pip.warn { background: var(--fb-accent); }
+      .pip.bad { background: var(--fb-danger); }
+
+      .trend { margin-bottom: 20px; }
+      .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 8px; padding: 0; list-style: none; font-size: 13px; color: var(--fb-text-mid); }
+      .legend li { display: inline-flex; align-items: center; gap: 6px; }
+      .legend i { width: 10px; height: 10px; border-radius: 50%; }
+      .trend-svg { display: block; width: 100%; height: auto; }
+      .gridline { stroke: var(--fb-border); stroke-width: 1; }
+      .axis-y, .axis-x { font-family: var(--fb-font-sans); font-size: 12px; fill: var(--fb-muted); }
+      .axis-y { text-anchor: end; }
+      .axis-x { text-anchor: middle; }
+      .line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .line.main { stroke-width: 3; }
+      /* Palette catégorielle validée (voir shared/chart-palette.ts), ordre fixe. */
+      .s1 { stroke: #2a78d6; background: #2a78d6; }
+      .s2 { stroke: #eb6834; background: #eb6834; }
+      .s3 { stroke: #1baf7a; background: #1baf7a; }
+      .s4 { stroke: #eda100; background: #eda100; }
+      .s5 { stroke: #e87ba4; background: #e87ba4; }
+      .point { fill: #2a78d6; stroke: var(--fb-surface); stroke-width: 2; cursor: default; }
+      .point:hover { r: 7; }
+
+      .method summary { display: flex; align-items: center; gap: 8px; font-weight: 700; cursor: pointer; list-style: none; }
+      .method summary::-webkit-details-marker { display: none; }
+      .method summary mat-icon { color: var(--fb-primary); }
+      .method p { margin: 12px 0 0; color: var(--fb-text-mid); line-height: 1.6; }
+
       @media (max-width: 1024px) {
-        .grid,
-        .period-grid {
-          grid-template-columns: 1fr;
-        }
+        .grid { grid-template-columns: minmax(0, 1fr); }
       }
-      @media (max-width: 768px) {
-        .toolbar {
-          justify-content: stretch;
-        }
-        .toolbar button {
-          width: 100%;
-        }
+      @media (max-width: 480px) {
+        .subscores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       }
     `,
   ],
@@ -577,8 +386,8 @@ export class ScoringDashboardPage implements OnInit {
     // source de vérité si la palette évolue un jour.
     const category = this.latestRecord()?.riskCategory;
     if (category === 'risque-eleve') return 'var(--fb-danger)';
-    if (category === 'risque-modere') return 'var(--fb-warning)';
-    if (category === 'vigilance-legere') return 'var(--fb-primary)';
+    if (category === 'risque-modere') return 'var(--fb-risk-moderate)';
+    if (category === 'vigilance-legere') return 'var(--fb-accent-strong)';
     if (category === 'equilibre-sain') return 'var(--fb-success)';
 
     const risk = this.latestRecord()?.riskLevel;

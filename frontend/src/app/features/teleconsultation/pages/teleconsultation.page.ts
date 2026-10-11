@@ -1,82 +1,62 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, DestroyRef, ElementRef, OnDestroy, OnInit, ViewChild, computed, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../../../core/services/auth.service';
 import { TeleconsultationService } from '../../../core/services/teleconsultation.service';
+import { NotificationService } from '../../../core/services/notification.service';
 import {
   TeleconsultationAppointment,
   TeleconsultationMessage,
   TeleconsultationPatientSummary,
   TeleconsultationSpecialistProfile,
 } from '../models/teleconsultation.models';
+import { MatIconModule } from '@angular/material/icon';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
+import { IllustrationComponent } from '../../../shared/components/illustration/illustration.component';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
+
+/**
+ * Les nouveaux messages arrivent en temps réel (Socket.IO). Ce rafraîchissement périodique
+ * n'est qu'un filet de sécurité si la connexion temps réel est coupée ; un intervalle court
+ * consommerait inutilement le quota du limiteur de requêtes de l'API (120 / 15 min).
+ */
+const MESSAGE_POLL_MS = 60000;
 
 @Component({
   selector: 'app-teleconsultation-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, EmptyStateComponent],
+  imports: [CommonModule, ReactiveFormsModule, MatIconModule, EmptyStateComponent,
+    IllustrationComponent, PageHeaderComponent],
   template: `
-        <!-- Content -->
         <div class="content">
+          <app-page-header
+            eyebrow="Spécialistes"
+            title="Téléconsultation"
+            [subtitle]="userRole() === 'specialist'
+              ? 'Suivez vos patients, leurs derniers résultats et leurs alertes.'
+              : 'Trouvez un spécialiste, prenez rendez-vous, rejoignez la visioconférence et échangez par messagerie sécurisée.'"
+            [illustration]="userRole() === 'specialist' ? 'specialist' : 'teleconsultation'"
+          >
+            <span class="role-chip" [class.specialist]="userRole() === 'specialist'">
+              <mat-icon>{{ userRole() === 'specialist' ? 'medical_services' : 'person' }}</mat-icon>
+              {{ userRole() === 'specialist' ? 'Espace spécialiste' : 'Espace patient' }}
+            </span>
+          </app-page-header>
 
-          <div class="page-topbar">
-            <div class="breadcrumb">
-              <span class="bc-root">FamilyBalance</span>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-              </svg>
-              <span class="bc-current">Téléconsultation</span>
-            </div>
-            <div class="top-right">
-              <span class="role-chip" [class.specialist]="userRole() === 'specialist'">
-                {{ userRole() === 'specialist' ? 'Spécialiste' : 'Patient' }}
-              </span>
-            </div>
+          <div class="fb-alert fb-alert--error" role="alert" *ngIf="errorMessage()">
+            <mat-icon>error_outline</mat-icon><span>{{ errorMessage() }}</span>
           </div>
-
-          <!-- Error -->
-          <div class="alert error" *ngIf="errorMessage()">
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.3"/>
-              <path d="M8 5v3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              <circle cx="8" cy="11" r=".8" fill="currentColor"/>
-            </svg>
-            {{ errorMessage() }}
-          </div>
-          <div class="alert success" *ngIf="successMessage()">
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.3"/>
-              <path d="M5.5 8.2l1.7 1.7 3.3-3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            {{ successMessage() }}
-          </div>
-
-          <!-- Page hero -->
-          <div class="page-hero">
-            <div class="hero-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke-width="1.5">
-                <rect x="2" y="4" width="20" height="14" rx="3" stroke="currentColor"/>
-                <path d="M8 22h8M12 18v4" stroke="currentColor" stroke-linecap="round"/>
-                <circle cx="12" cy="11" r="3" stroke="currentColor"/>
-                <path d="M7 11c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" stroke-linecap="round"/>
-              </svg>
-            </div>
-            <div>
-              <h1>Téléconsultation</h1>
-              <p>Annuaire, rendez-vous, visioconférence sécurisée et messagerie chiffrée E2E</p>
-            </div>
-            <div class="hero-badges">
-              <span class="h-badge"><span class="h-dot green"></span>WebRTC E2E</span>
-              <span class="h-badge"><span class="h-dot blue"></span>Jitsi / Daily.co</span>
-              <span class="h-badge"><span class="h-dot purple"></span>RGPD conforme</span>
-            </div>
+          <div class="fb-alert fb-alert--success" role="status" *ngIf="successMessage()">
+            <mat-icon>check_circle</mat-icon><span>{{ successMessage() }}</span>
           </div>
 
           <!-- Two-column layout -->
-          <div class="tele-grid" *ngIf="userRole() !== 'admin'">
+          <div class="tele-grid" *ngIf="isPatient() || isSpecialist()" [class.specialist-layout]="isSpecialist()">
 
-            <!-- LEFT column -->
-            <div class="left-col">
+            <!-- LEFT column : annuaire + réservation (parents / adolescents uniquement) -->
+            <div class="left-col" *ngIf="isPatient()">
 
               <!-- ── Annuaire ──────────────────── -->
               <div class="section-card">
@@ -174,6 +154,7 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
                 <ng-template #noSpecTpl>
                   <app-empty-state
                     icon="person_search"
+                    illustration="empty-search"
                     title="Aucun spécialiste trouvé"
                     message="Ajustez vos filtres pour élargir la recherche."
                   ></app-empty-state>
@@ -241,9 +222,9 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
                       <label>Mode de consultation</label>
                       <div class="f-wrap">
                         <select class="f-input f-select" formControlName="consultationMode">
-                          <option value="video">📹 Vidéo</option>
-                          <option value="audio">🎙️ Audio</option>
-                          <option value="chat">💬 Chat</option>
+                          <option value="video">Vidéo</option>
+                          <option value="audio">Audio</option>
+                          <option value="chat">Messagerie</option>
                         </select>
                       </div>
                     </div>
@@ -297,14 +278,28 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
                     </svg>
                   </div>
                   <div>
-                    <h2>Mes rendez-vous</h2>
-                    <p>{{ appointments().length }} consultation(s)</p>
+                    <h2>{{ isSpecialist() ? 'Demandes de téléconsultation' : 'Mes rendez-vous' }}</h2>
+                    <p>{{ appointments().length }} {{ isSpecialist() ? 'demande(s) reçue(s)' : 'consultation(s)' }}</p>
                   </div>
-                  <button class="btn-refresh" type="button" aria-label="Actualiser les rendez-vous" (click)="loadAppointments()">
+                  <button
+                    class="btn-refresh"
+                    type="button"
+                    [attr.aria-label]="isSpecialist() ? 'Actualiser les demandes' : 'Actualiser les rendez-vous'"
+                    [disabled]="loadingAppointments()"
+                    (click)="loadAppointments()"
+                  >
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
                       <path d="M14 8A6 6 0 0 1 2 8M2 4v4h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                   </button>
+                </div>
+
+                <div class="fb-loading" *ngIf="loadingAppointments() && !appointments().length">
+                  <span class="fb-spinner"></span>
+                  Chargement…
+                </div>
+                <div class="fb-alert fb-alert--error" role="alert" *ngIf="appointmentsError()">
+                  <mat-icon>error_outline</mat-icon><span>{{ appointmentsError() }}</span>
                 </div>
 
                 <div class="appt-list" *ngIf="appointments().length > 0; else noApptTpl">
@@ -323,19 +318,23 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
                     <div class="appt-top">
                       <div class="appt-av">{{ counterpartName(appt).charAt(0) }}</div>
                       <div class="appt-info">
-                        <strong>{{ counterpartName(appt) }}</strong>
-                        <span>{{ formatDate(appt.slotStart) }}</span>
+                        <strong>
+                          {{ counterpartName(appt) }}
+                          <span class="who" *ngIf="isSpecialist() && appt.patient?.role">{{ patientRoleLabel(appt.patient?.role) }}</span>
+                        </strong>
+                        <span>{{ formatDate(appt.slotStart) }} · {{ modeLabel(appt.consultationMode) }}</span>
                       </div>
                       <span class="status-pill" [attr.data-status]="appt.status">
                         {{ statusLabel(appt.status) }}
                       </span>
                     </div>
-                    <p class="appt-reason" *ngIf="appt.reason">{{ appt.reason }}</p>
+                    <p class="appt-reason" *ngIf="appt.reason"><strong>Motif :</strong> {{ appt.reason }}</p>
                   </div>
                 </div>
                 <ng-template #noApptTpl>
-                  <div class="empty-state small">
-                    <p>Aucun rendez-vous planifié.</p>
+                  <div class="empty-state small" *ngIf="!loadingAppointments() && !appointmentsError()">
+                    <app-illustration class="small-illus" name="appointments" fallbackIcon="event_available"></app-illustration>
+                    <p>{{ isSpecialist() ? 'Aucune demande de téléconsultation pour le moment.' : 'Aucun rendez-vous planifié.' }}</p>
                   </div>
                 </ng-template>
               </div>
@@ -350,12 +349,31 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
                     </svg>
                   </div>
                   <div>
-                    <h2>Salle d'attente</h2>
+                    <h2>{{ isSpecialist() ? 'Détail de la demande' : "Salle d'attente" }}</h2>
                     <p>{{ counterpartName(appt) }}</p>
                   </div>
                 </div>
 
                 <div class="waiting-info">
+                  <div class="wi-row" *ngIf="isSpecialist() && appt.patient">
+                    <span class="wi-label">Demandeur</span>
+                    <p class="wi-msg">
+                      {{ appt.patient.firstName }} {{ appt.patient.lastName }}
+                      ({{ patientRoleLabel(appt.patient.role) }}) · {{ appt.patient.email }}
+                    </p>
+                  </div>
+                  <div class="wi-row">
+                    <span class="wi-label">Créneau</span>
+                    <p class="wi-msg">{{ formatDate(appt.slotStart) }} → {{ formatTime(appt.slotEnd) }}</p>
+                  </div>
+                  <div class="wi-row">
+                    <span class="wi-label">Motif</span>
+                    <p class="wi-msg">{{ appt.reason || '—' }}</p>
+                  </div>
+                  <div class="wi-row">
+                    <span class="wi-label">Mode</span>
+                    <p class="wi-msg">{{ modeLabel(appt.consultationMode) }} · {{ statusLabel(appt.status) }}</p>
+                  </div>
                   <div class="wi-row">
                     <span class="wi-label">Salle</span>
                     <code class="wi-value">{{ appt.meetingUrl.split('/').pop() || '—' }}</code>
@@ -443,7 +461,20 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
                   </p>
                 </div>
 
-                
+                <!-- Bilan partagé par le patient, visible du spécialiste -->
+                <div class="share-block" *ngIf="isSpecialist()">
+                  <ng-container *ngIf="appt.bilanShared && appt.sharedScoreSnapshot as bilan; else noBilan">
+                    <span class="slots-label">Bilan FamilyBalance partagé</span>
+                    <div class="bilan">
+                      <strong>{{ bilan.globalScore }}/100</strong>
+                      <span class="risk-badge" [attr.data-risk]="bilan.riskLevel">{{ riskLabel(bilan.riskLevel) }}</span>
+                      <small>Comportemental {{ bilan.subScores.comportemental }} · Émotionnel {{ bilan.subScores.emotionnel }} · Social {{ bilan.subScores.social }} · Parental {{ bilan.subScores.parental }}</small>
+                    </div>
+                  </ng-container>
+                  <ng-template #noBilan>
+                    <p class="share-note">Le patient n'a pas encore partagé son bilan FamilyBalance.</p>
+                  </ng-template>
+                </div>
               </div>
 
               <!-- ── Messagerie sécurisée ──────── -->
@@ -457,28 +488,40 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
                   </div>
                   <div>
                     <h2>Messagerie sécurisée</h2>
-                    <p>Chiffrement E2E · {{ messages().length }} message(s)</p>
+                    <p>Avec {{ counterpartName(appt) }} · {{ messages().length }} message(s)</p>
                   </div>
-                  <button class="btn-refresh" type="button" aria-label="Actualiser les messages" (click)="loadMessages(appt._id)">
+                  <button class="btn-refresh" type="button" aria-label="Actualiser les messages" [disabled]="loadingMessages()" (click)="loadMessages(appt._id)">
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
                       <path d="M14 8A6 6 0 0 1 2 8M2 4v4h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                   </button>
                 </div>
 
+                <div class="fb-alert fb-alert--error" role="alert" *ngIf="messagesError()">
+                  <mat-icon>error_outline</mat-icon><span>{{ messagesError() }}</span>
+                </div>
+
                 <!-- Messages thread -->
-                <div class="msg-thread" *ngIf="messages().length > 0; else noMsgTpl">
-                  <div class="msg-bubble" *ngFor="let msg of messages()" [attr.data-type]="msg.messageType">
+                <div class="msg-thread" #thread aria-live="polite" *ngIf="messages().length > 0; else noMsgTpl">
+                  <div class="msg-bubble" *ngFor="let msg of messages(); trackBy: trackMessage" [class.mine]="isMine(msg)">
                     <div class="msg-tag">
+                      <strong class="msg-author">{{ isMine(msg) ? 'Vous' : (msg.senderName || counterpartName(appt)) }}</strong>
                       <span class="msg-type-pill" [class.pre]="msg.messageType === 'pre'">
                         {{ msg.messageType === 'pre' ? 'Pré-consultation' : 'Post-consultation' }}
                       </span>
+                      <time class="msg-time">{{ formatDate(msg.createdAt) }}</time>
                     </div>
                     <p>{{ msg.content }}</p>
                   </div>
                 </div>
                 <ng-template #noMsgTpl>
-                  <div class="empty-state small"><p>Aucun message dans cette conversation.</p></div>
+                  <div class="fb-loading" *ngIf="loadingMessages(); else emptyThread">
+                    <span class="fb-spinner"></span>
+                    Chargement de la conversation…
+                  </div>
+                  <ng-template #emptyThread>
+                    <div class="empty-state small"><app-illustration class="small-illus" name="messaging" fallbackIcon="forum"></app-illustration><p>Aucun message pour le moment. Écrivez le premier message ci-dessous.</p></div>
+                  </ng-template>
                 </ng-template>
 
                 <!-- Message form -->
@@ -499,10 +542,12 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
                     <textarea
                       class="msg-textarea"
                       rows="3"
+                      maxlength="2000"
                       formControlName="content"
+                      [attr.aria-label]="'Message à ' + counterpartName(appt)"
                       placeholder="Rédigez votre message sécurisé…"
                     ></textarea>
-                    <button type="submit" class="btn-send" aria-label="Envoyer le message" [disabled]="messageForm.invalid">
+                    <button type="submit" class="btn-send" aria-label="Envoyer le message" [disabled]="messageForm.invalid || sendingMessage()">
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                         <path d="M2 14L14 8 2 2v5l8 1-8 1v5z" fill="currentColor"/>
                       </svg>
@@ -559,246 +604,315 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
               </div>
             </div>
             <ng-template #noPatientsTPl>
-              <div class="empty-state small"><p>Aucun patient référencé pour le moment.</p></div>
+              <div class="empty-state small"><app-illustration class="small-illus" name="family-dashboard" fallbackIcon="groups"></app-illustration><p>Aucun patient référencé pour le moment.</p></div>
             </ng-template>
           </div>
 
         </div>
   `,
   styles: [`
-    :host {
-      display: block;
-      --navy: var(--fb-primary-strong);
-      --navy2: var(--fb-primary-strong);
-      --blue: var(--fb-primary);
-      --blue2: var(--fb-primary);
-      --teal: var(--fb-accent);
-      --green: var(--fb-success);
-      --purple: #7e22ce;
-      --amber: var(--fb-warning);
-      --red: var(--fb-danger);
-      --surface: var(--fb-bg);
-      --card: var(--fb-surface-strong);
-      --border: var(--fb-border);
-      --text: var(--fb-text);
-      --muted: var(--fb-muted);
-      --faint: var(--fb-muted);
-      --r: 20px;
-      --r-sm: 12px;
+    :host { display: block; }
+    .content { display: flex; flex-direction: column; gap: 20px; }
+    .content > app-page-header { display: block; margin-bottom: -4px; }
+
+    .role-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: var(--fb-radius-pill);
+      background: var(--fb-primary-soft);
+      color: var(--fb-primary-strong);
+      font-size: 13.5px;
+      font-weight: 700;
     }
+    .role-chip.specialist { background: var(--fb-accent-soft); color: var(--fb-warning-ink); }
+    .role-chip mat-icon { width: 18px; height: 18px; font-size: 18px; }
 
-    /* ── Page topbar (breadcrumb + actions, sits inside the shared shell) ── */
-    .page-topbar { padding: 0 0 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); margin-bottom: 4px; }
-    .breadcrumb { display: flex; align-items: center; gap: 8px; }
-    .bc-root { font-size: 12px; color: var(--faint); letter-spacing: 0.08em; text-transform: uppercase; }
-    .breadcrumb svg { stroke: var(--faint); }
-    .bc-current { font-size: 14px; font-weight: 700; color: var(--text); }
-    .top-right { display: flex; align-items: center; gap: 10px; }
-    .role-chip { background: var(--fb-primary-soft); color: var(--fb-primary-strong); border: 1px solid rgba(var(--fb-primary-rgb),.25); border-radius: 20px; padding: 4px 12px; font-size: 11px; font-weight: 700; }
-    .role-chip.specialist { background: #fdf4ff; color: var(--purple); border-color: #e9d5ff; }
-    .back-btn { display: flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--fb-border-strong); color: var(--fb-text); border-radius: 12px; padding: 10px 16px; font-size: 0.95rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: var(--fb-transition); }
-    .back-btn:hover { border-color: var(--blue); color: var(--blue); }
+    /* Mise en page */
+    .tele-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+    /* Spécialiste : pas d'annuaire, la liste des demandes et la conversation côte à côte. */
+    .tele-grid.specialist-layout { grid-template-columns: minmax(0, 1fr); }
+    .specialist-layout .right-col { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); align-items: start; }
+    .specialist-layout .right-col > :first-child { grid-row: span 2; }
+    .left-col, .right-col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 
-    /* Content */
-    .content { display: flex; flex-direction: column; gap: 16px; }
+    .section-card {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: clamp(18px, 2.5vw, 26px);
+      border-radius: var(--fb-radius-md);
+      background: var(--fb-surface);
+      box-shadow: var(--fb-elev-1);
+      min-width: 0;
+    }
+    .card-head { display: flex; align-items: center; gap: 14px; }
+    .card-head > div:not(.card-head-icon) { flex: 1; min-width: 0; }
+    .card-head h2 { margin: 0; font-family: var(--fb-font-sans); font-variation-settings: normal; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+    .card-head p { margin: 2px 0 0; color: var(--fb-text-mid); font-size: 13.5px; }
+    .card-head-icon {
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: var(--fb-primary-soft);
+      color: var(--fb-primary);
+    }
+    .card-head-icon svg { width: 20px; height: 20px; stroke: currentColor; fill: none; }
+    .card-head-icon.amber, .card-head-icon.purple { background: var(--fb-accent-soft); color: var(--fb-accent-strong); }
+    .card-head-icon.navy { background: var(--fb-ink); color: #fff; }
+    .card-head-icon.green { background: rgba(var(--fb-success-rgb), 0.1); color: var(--fb-success); }
 
-    /* Alert */
-    .alert { display: flex; align-items: flex-start; gap: 9px; padding: 10px 14px; border-radius: var(--r-sm); font-size: 13px; }
-    .alert.error { background: rgba(192,57,43,.07); border: 1px solid rgba(192,57,43,.22); color: var(--red); }
-    .alert.success { background: rgba(21,127,69,.08); border: 1px solid rgba(21,127,69,.22); color: var(--green); }
-    .alert svg { flex-shrink: 0; }
+    .btn-refresh {
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--fb-border);
+      border-radius: 50%;
+      background: var(--fb-surface);
+      color: var(--fb-text-mid);
+      cursor: pointer;
+    }
+    .btn-refresh:hover { background: var(--fb-surface-alt); color: var(--fb-text); }
 
-    /* Page hero */
-    .page-hero { background: linear-gradient(135deg, var(--fb-primary-strong) 0%, var(--fb-primary) 100%); border-radius: 26px; padding: 28px 28px 24px; display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center; box-shadow: 0 32px 70px rgba(var(--fb-primary-rgb), 0.22); }
-    .hero-icon { width: 56px; height: 56px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.23); border-radius: 18px; display: grid; place-items: center; flex-shrink: 0; }
-    .hero-icon svg { stroke: #fff; }
-    .page-hero h1 { font-size: clamp(2rem, 3vw, 2.8rem); font-weight: 800; color: #fff; margin: 0 0 6px; letter-spacing: -0.03em; }
-    .page-hero p { font-size: 0.98rem; color: rgba(255,255,255,.88); margin: 0; line-height: 1.7; max-width: 640px; }
-    .hero-badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-    .h-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: rgba(255,255,255,.92); background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15); border-radius: 999px; padding: 8px 12px; }
-    .h-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-    .h-dot.green { background: #4ade80; }
-    .h-dot.blue { background: #60a5fa; }
-    .h-dot.purple { background: #c084fc; }
+    /* Champs */
+    .filter-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .filter-form .btn-filter { grid-column: 1 / -1; justify-self: start; }
+    .booking-form { display: flex; flex-direction: column; gap: 14px; }
+    .f-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .f-group { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .f-group > label { font-size: 13px; font-weight: 600; color: var(--fb-text); }
+    .req { color: var(--fb-danger); }
+    .f-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 44px;
+      padding: 0 12px;
+      border: 1.5px solid var(--fb-border);
+      border-radius: var(--fb-radius-sm);
+      background: var(--fb-surface);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .f-wrap:focus-within { border-color: var(--fb-primary); box-shadow: 0 0 0 4px rgba(var(--fb-primary-rgb), 0.12); }
+    .f-wrap.invalid { border-color: var(--fb-danger); }
+    .f-icon { flex-shrink: 0; width: 16px; height: 16px; color: var(--fb-faint); }
+    .f-input { flex: 1; min-width: 0; height: 100%; border: none; outline: none; background: transparent; color: var(--fb-text); font-size: 14px; }
+    .f-input::placeholder { color: var(--fb-faint); }
+    .f-select { cursor: pointer; }
 
-    /* Grid */
-    .tele-grid { display: grid; grid-template-columns: 1fr 380px; gap: 16px; align-items: start; }
-    .left-col, .right-col { display: flex; flex-direction: column; gap: 14px; }
+    /* Boutons (alignés sur .fb-btn) */
+    .btn-filter, .btn-book, .btn-join, .btn-cancel, .btn-move, .btn-share, .rule-btn-cancel {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 18px;
+      border: 1px solid transparent;
+      border-radius: var(--fb-radius-pill);
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn-filter, .btn-book { background: var(--fb-primary); color: #fff; }
+    .btn-filter:hover:not(:disabled), .btn-book:hover:not(:disabled) { background: var(--fb-primary-strong); }
+    .btn-book { width: 100%; min-height: 48px; }
+    .btn-join { width: 100%; min-height: 48px; background: var(--fb-accent); color: var(--fb-ink); }
+    .btn-join:hover { background: var(--fb-accent-hover); }
+    .btn-move, .btn-share, .rule-btn-cancel { background: var(--fb-surface); border-color: var(--fb-border-strong); color: var(--fb-text); }
+    .btn-move:hover, .btn-share:hover:not(:disabled), .rule-btn-cancel:hover { background: var(--fb-surface-alt); }
+    .btn-cancel { background: var(--fb-surface); border-color: rgba(var(--fb-danger-rgb), 0.35); color: var(--fb-danger); }
+    .btn-cancel:hover:not(:disabled) { background: rgba(var(--fb-danger-rgb), 0.06); }
+    .btn-filter:disabled, .btn-book:disabled, .btn-cancel:disabled, .btn-share:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* Section card */
-    .section-card { background: var(--card); border: 1px solid rgba(148, 163, 184, 0.12); border-radius: var(--r); overflow: hidden; box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06); transition: transform .18s, box-shadow .18s; }
-    .section-card:hover { transform: translateY(-1px); box-shadow: 0 22px 46px rgba(15, 23, 42, 0.08); }
-    .card-head { display: flex; align-items: center; gap: 14px; padding: 18px 18px 16px; border-bottom: 1px solid rgba(148, 163, 184, 0.12); }
-    .card-head-icon { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0; border: 1px solid rgba(148, 163, 184, 0.12); }
-    .card-head-icon svg { width: 18px; height: 18px; fill: none; stroke-width: 1.5; }
-    .card-head-icon.blue { background: var(--fb-primary-soft); } .card-head-icon.blue svg { stroke: var(--blue); }
-    .card-head-icon.teal { background: #ecfeff; } .card-head-icon.teal svg { stroke: var(--teal); }
-    .card-head-icon.green { background: #f0fdf4; } .card-head-icon.green svg { stroke: var(--green); }
-    .card-head-icon.purple { background: #fdf4ff; } .card-head-icon.purple svg { stroke: var(--purple); }
-    .card-head-icon.amber { background: #fffbeb; } .card-head-icon.amber svg { stroke: var(--amber); }
-    .card-head-icon.navy { background: #eef2ff; } .card-head-icon.navy svg { stroke: var(--navy); }
-    .card-head h2 { font-size: 14px; font-weight: 800; color: var(--text); margin: 0 0 2px; letter-spacing: -0.02em; }
-    .card-head p { font-size: 11px; color: var(--muted); margin: 0; }
-    .btn-refresh { margin-left: auto; width: 34px; height: 34px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.18); background: #fff; display: grid; place-items: center; cursor: pointer; transition: all .18s; color: var(--muted); }
-    .btn-refresh:hover { border-color: var(--blue); color: var(--blue); }
+    /* Annuaire */
+    .specialist-list { display: flex; flex-direction: column; gap: 8px; }
+    .specialist-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px;
+      border: 1.5px solid var(--fb-border);
+      border-radius: 16px;
+      cursor: pointer;
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+    .specialist-card:hover { border-color: var(--fb-border-strong); background: var(--fb-surface-alt); }
+    .specialist-card.selected { border-color: var(--fb-primary); background: var(--fb-primary-soft); }
+    .spec-av, .appt-av, .patient-av {
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: var(--fb-ink);
+      color: #fff;
+      font-weight: 700;
+    }
+    .spec-av.large { width: 56px; height: 56px; border-radius: 18px; font-size: 20px; }
+    .spec-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .spec-info strong { font-size: 15px; }
+    .spec-info > span { color: var(--fb-text-mid); font-size: 13.5px; }
+    .spec-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .meta-pill { padding: 2px 9px; border-radius: var(--fb-radius-pill); background: var(--fb-surface-alt); color: var(--fb-text-mid); font-size: 12px; font-weight: 600; }
+    .meta-pill.price { background: var(--fb-accent-soft); color: var(--fb-warning-ink); }
+    .meta-pill.available { background: rgba(var(--fb-success-rgb), 0.1); color: var(--fb-success-ink); }
+    .spec-rating { display: inline-flex; align-items: center; gap: 4px; color: var(--fb-accent-strong); font-size: 13px; font-weight: 700; }
 
-    /* Filter form */
-    .filter-form { padding: 14px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-bottom: 1px solid var(--border); }
-    .f-group { display: flex; flex-direction: column; gap: 4px; }
-    .f-group label { font-size: 11px; font-weight: 600; color: var(--muted); }
-    .f-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .req { color: var(--red); font-size: 11px; }
-    .f-wrap { display: flex; align-items: center; gap: 6px; border: 1.5px solid var(--border); border-radius: var(--r-sm); background: var(--surface); padding: 0 9px; height: 38px; transition: border .15s, box-shadow .15s, background .15s; }
-    .f-wrap:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(var(--fb-primary-rgb),.1); background: #fff; }
-    .f-wrap.invalid { border-color: var(--red); }
-    .f-icon { width: 13px; height: 13px; stroke: var(--faint); fill: none; flex-shrink: 0; }
-    .f-wrap:focus-within .f-icon { stroke: var(--blue); }
-    .f-input { flex: 1; border: none; outline: none; background: transparent; font-size: 12px; color: var(--text); font-family: inherit; min-width: 0; }
-    .f-input::placeholder { color: var(--faint); }
-    .f-select { appearance: none; cursor: pointer; }
-    .btn-filter { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 38px; border: none; border-radius: var(--r-sm); background: var(--navy); color: #fff; font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer; transition: background .15s; }
-    .btn-filter:hover { background: var(--navy2); }
+    /* Réservation */
+    .spec-detail { display: flex; gap: 14px; padding: 14px; border-radius: 16px; background: var(--fb-surface-alt); }
+    .spec-detail strong { display: block; font-size: 15.5px; }
+    .spec-detail span { color: var(--fb-text-mid); font-size: 14px; line-height: 1.5; }
+    .slots-label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: var(--fb-text); }
+    .slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .slot-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 40px;
+      padding: 0 10px;
+      border: 1.5px solid var(--fb-border);
+      border-radius: var(--fb-radius-sm);
+      background: var(--fb-surface);
+      color: var(--fb-text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .slot-btn:hover { border-color: var(--fb-primary); }
+    .slot-btn.picked { border-color: var(--fb-primary); background: var(--fb-primary); color: #fff; }
+    .no-slots { margin: 0; color: var(--fb-muted); font-size: 14px; }
 
-    /* Specialist list */
-    .specialist-list { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; max-height: 320px; overflow-y: auto; }
-    .specialist-card { display: flex; align-items: center; gap: 12px; padding: 14px 14px; border: 1px solid rgba(148, 163, 184, 0.16); border-radius: 18px; cursor: pointer; transition: all .18s; background: #fff; box-shadow: 0 15px 30px rgba(15, 23, 42, 0.05); }
-    .specialist-card:hover { border-color: var(--blue); background: var(--fb-primary-soft); transform: translateY(-1px); }
-    .specialist-card.selected { border-color: var(--blue); background: var(--fb-primary-soft); }
-    .spec-av { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--blue), var(--blue2)); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
-    .spec-av.large { width: 52px; height: 52px; font-size: 16px; }
-    .spec-info { flex: 1; min-width: 0; }
-    .spec-info strong { display: block; font-size: 13px; font-weight: 800; color: var(--text); font-family: inherit; margin-bottom: 3px; }
-    .spec-info > span { font-size: 11px; color: var(--muted); display: block; margin-bottom: 5px; }
-    .spec-meta { display: flex; gap: 5px; flex-wrap: wrap; }
-    .meta-pill { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: var(--muted); border: 1px solid var(--border); }
-    .meta-pill.price { background: #fffbeb; color: var(--amber); border-color: #fde68a; }
-    .meta-pill.available { background: #f0fdf4; color: var(--green); border-color: #bbf7d0; }
-    .spec-rating { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--amber); flex-shrink: 0; }
-    .spec-rating svg { fill: var(--amber); }
+    /* Rendez-vous */
+    .appt-list { display: flex; flex-direction: column; gap: 8px; }
+    .appt-card { padding: 12px 14px; border: 1.5px solid var(--fb-border); border-radius: 16px; cursor: pointer; }
+    .appt-card:hover { background: var(--fb-surface-alt); }
+    .appt-card.active { border-color: var(--fb-primary); background: var(--fb-primary-soft); }
+    .appt-top { display: flex; align-items: center; gap: 12px; }
+    .appt-av { width: 38px; height: 38px; border-radius: 12px; }
+    .appt-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .appt-info strong { font-size: 14.5px; }
+    .appt-info span { color: var(--fb-muted); font-size: 13px; }
+    .appt-reason { margin: 8px 0 0; color: var(--fb-text-mid); font-size: 13.5px; }
+    .status-pill { flex-shrink: 0; padding: 3px 10px; border-radius: var(--fb-radius-pill); background: var(--fb-surface-alt); color: var(--fb-text-mid); font-size: 12px; font-weight: 700; }
+    .status-pill[data-status="pending"] { background: var(--fb-accent-soft); color: var(--fb-warning-ink); }
+    .status-pill[data-status="confirmed"], .status-pill[data-status="in-progress"] { background: rgba(var(--fb-success-rgb), 0.1); color: var(--fb-success-ink); }
+    .status-pill[data-status="cancelled"] { background: rgba(var(--fb-danger-rgb), 0.08); color: var(--fb-danger); }
+    .empty-state.small { padding: 18px; border-radius: var(--fb-radius-sm); background: var(--fb-surface-alt); text-align: center; }
+    .empty-state.small p { margin: 0; color: var(--fb-muted); font-size: 14px; }
+    .empty-state.small .small-illus { width: min(170px, 60%); margin: 0 auto 6px; }
 
-    /* Booking form */
-    .spec-detail { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-    .spec-detail strong { display: block; font-size: 13px; font-weight: 700; color: var(--text); font-family: inherit; margin-bottom: 2px; }
-    .spec-detail > div span { font-size: 11px; color: var(--muted); }
-    .slots-section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
-    .slots-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; display: block; margin-bottom: 8px; }
-    .slot-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-    .slot-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--fb-primary-soft); color: var(--blue); border: 1.5px solid rgba(var(--fb-primary-rgb),.25); border-radius: 999px; padding: 8px 12px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .18s; }
-    .slot-btn:hover { transform: translateY(-1px); }
-    .slot-btn.picked { background: var(--blue); color: #fff; border-color: var(--blue); }
-    .slot-btn svg { fill: none; stroke: currentColor; stroke-width: 1.3; }
-    .no-slots { font-size: 11px; color: var(--faint); margin: 0; }
-    .booking-form { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 12px; }
-    .btn-book { height: 44px; background: linear-gradient(135deg, #0f766e, #14b8a6); color: #fff; border: none; border-radius: 14px; font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: opacity .18s, transform .18s; box-shadow: 0 10px 30px rgba(20, 163, 146, 0.28); }
-    .btn-book:hover:not(:disabled) { opacity: .94; transform: translateY(-1px); }
-    .btn-book:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+    /* Salle d'attente */
+    .waiting-info { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: var(--fb-radius-sm); background: var(--fb-surface-alt); }
+    .wi-row { display: flex; gap: 12px; align-items: baseline; }
+    .wi-label { min-width: 70px; color: var(--fb-muted); font-size: 13px; }
+    .wi-value { padding: 2px 8px; border-radius: 6px; background: var(--fb-surface); font-family: var(--fb-font-mono); font-size: 12.5px; overflow-wrap: anywhere; }
+    .wi-msg { margin: 0; font-size: 14px; }
+    .appt-action-row, .reschedule-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .reschedule-block { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px dashed var(--fb-border-strong); border-radius: var(--fb-radius-sm); }
+    .share-block { padding-top: 14px; border-top: 1px solid var(--fb-border); }
+    .share-note { margin: 8px 0 0; color: var(--fb-muted); font-size: 13px; }
 
-    /* Appointments */
-    .appt-list { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; max-height: 280px; overflow-y: auto; }
-    .appt-card { padding: 14px 14px; border: 1.5px solid rgba(148, 163, 184, 0.16); border-radius: 18px; cursor: pointer; transition: all .18s; background: #fff; box-shadow: 0 16px 32px rgba(15, 23, 42, 0.04); }
-    .appt-card:hover { border-color: var(--purple); background: #faf5ff; transform: translateY(-1px); }
-    .appt-card.active { border-color: var(--purple); background: #faf5ff; }
-    .appt-top { display: flex; align-items: center; gap: 11px; }
-    .appt-av { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--purple), #9333ea); color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 800; flex-shrink: 0; }
-    .appt-info { flex: 1; min-width: 0; }
-    .appt-info strong { display: block; font-size: 13px; font-weight: 800; color: var(--text); font-family: inherit; }
-    .appt-info span { font-size: 11px; color: var(--faint); }
-    .status-pill { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .05em; }
-    .status-pill[data-status="pending"] { background: #fffbeb; color: var(--amber); }
-    .status-pill[data-status="confirmed"] { background: var(--fb-primary-soft); color: var(--blue); }
-    .status-pill[data-status="completed"] { background: #f0fdf4; color: var(--green); }
-    .status-pill[data-status="cancelled"] { background: #fef2f2; color: var(--red); }
-    .status-pill[data-status="in-progress"] { background: #fffbeb; color: var(--amber); }
-    .appt-reason { font-size: 11px; color: var(--muted); margin: 8px 0 0; padding-top: 8px; border-top: 1px solid rgba(148, 163, 184, 0.16); }
-
-    /* Waiting room */
-    .waiting-card .waiting-info { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border); }
-    .wi-row { display: flex; align-items: baseline; gap: 8px; }
-    .wi-label { font-size: 10px; font-weight: 700; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; min-width: 50px; flex-shrink: 0; }
-    .wi-value { font-size: 11px; font-weight: 700; font-family: 'Courier New', monospace; background: var(--surface); padding: 2px 8px; border-radius: 6px; color: var(--navy); }
-    .wi-msg { font-size: 12px; color: var(--muted); margin: 0; }
-    .btn-join { margin: 14px 16px; height: 44px; background: linear-gradient(135deg, var(--green), #15803d); color: #fff; border: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity .15s, transform .15s; box-shadow: 0 3px 12px rgba(22,163,74,.35); }
-    .btn-join:hover { opacity: .92; transform: translateY(-1px); }
-    .btn-join svg { stroke: #fff; fill: none; }
-    .appt-action-row { margin: 0 16px 14px; display: flex; gap: 8px; flex-wrap: wrap; }
-    .btn-cancel { flex: 1; min-width: 140px; height: 38px; background: transparent; color: var(--red); border: 1.5px solid rgba(192,57,43,.3); border-radius: var(--r-sm); font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; transition: background .15s, opacity .15s; }
-    .btn-cancel:hover:not(:disabled) { background: rgba(192,57,43,.07); }
-    .btn-cancel:disabled { opacity: .5; cursor: not-allowed; }
-    .btn-move { flex: 1; min-width: 140px; height: 38px; background: transparent; color: var(--blue); border: 1.5px solid rgba(var(--fb-primary-rgb),.3); border-radius: var(--r-sm); font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; transition: background .15s, opacity .15s; }
-    .btn-move:hover:not(:disabled) { background: var(--fb-primary-soft); }
-    .reschedule-block { margin: 0 16px 16px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--surface); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
-    .reschedule-actions { display: flex; gap: 8px; align-items: center; }
-    .rule-btn-cancel { border: 1px solid var(--border); background: #fff; color: var(--muted); border-radius: var(--r-sm); padding: 0 16px; height: 38px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
-    .share-block { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px; }
-    .btn-share { height: 40px; border: none; border-radius: var(--r-sm); background: linear-gradient(135deg, var(--fb-primary-strong), var(--fb-primary)); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; transition: opacity .15s, transform .15s; }
-    .btn-share:disabled { opacity: .5; cursor: not-allowed; }
-    .share-note { margin: 0; font-size: 11px; color: var(--faint); }
-
-    /* Messaging */
-    .msg-thread { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; max-height: 190px; overflow-y: auto; border-bottom: 1px solid rgba(148, 163, 184, 0.16); }
-    .msg-bubble { padding: 14px 16px; border-radius: 20px; background: #f8fbff; border: 1px solid rgba(148, 163, 184, 0.16); box-shadow: 0 14px 30px rgba(15, 23, 42, 0.04); }
-    .msg-bubble[data-type="post"] { background: #fffbeb; border-color: #fde68a; }
-    .msg-tag { margin-bottom: 8px; }
-    .msg-type-pill { font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
-    .msg-type-pill.pre { background: var(--fb-primary-soft); color: var(--blue); }
-    .msg-type-pill:not(.pre) { background: #fffbeb; color: var(--amber); }
-    .msg-bubble p { margin: 0; font-size: 13px; color: var(--text); line-height: 1.7; }
-    .msg-form { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
-    .msg-type-row { display: flex; gap: 8px; }
-    .type-chip { border: 1px solid rgba(148, 163, 184, 0.16); background: #fff; color: var(--muted); border-radius: 999px; padding: 4px 12px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .18s; }
-    .type-chip.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+    /* Messagerie */
+    .msg-thread { display: flex; flex-direction: column; gap: 10px; max-height: 340px; overflow-y: auto; padding: 4px; }
+    .msg-bubble { max-width: 88%; padding: 10px 14px; border-radius: 16px 16px 16px 4px; background: var(--fb-surface-alt); }
+    .msg-bubble.mine { align-self: flex-end; border-radius: 16px 16px 4px 16px; background: var(--fb-primary-soft); }
+    .msg-bubble p { margin: 4px 0 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .msg-tag { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+    .msg-author { font-size: 12.5px; }
+    .msg-time { margin-left: auto; font-size: 11.5px; color: var(--fb-muted); }
+    .who { margin-left: 6px; padding: 1px 8px; border-radius: var(--fb-radius-pill); background: var(--fb-surface-alt); color: var(--fb-text-mid); font-size: 11.5px; font-weight: 700; }
+    .bilan { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 14px; border-radius: var(--fb-radius-sm); background: var(--fb-surface-alt); }
+    .bilan strong { font-family: var(--fb-font-serif); font-size: 22px; }
+    .bilan small { flex-basis: 100%; color: var(--fb-text-mid); font-size: 12.5px; }
+    .msg-type-pill { font-size: 11.5px; font-weight: 700; color: var(--fb-primary-strong); }
+    .msg-type-pill.pre { color: var(--fb-accent-strong); }
+    .msg-form { display: flex; flex-direction: column; gap: 10px; }
+    .msg-type-row { display: inline-flex; align-self: flex-start; padding: 4px; border-radius: var(--fb-radius-pill); background: var(--fb-surface-alt); }
+    .type-chip { padding: 6px 14px; border: none; border-radius: var(--fb-radius-pill); background: transparent; color: var(--fb-text-mid); font-size: 13px; font-weight: 600; cursor: pointer; }
+    .type-chip.active { background: var(--fb-surface); color: var(--fb-text); box-shadow: var(--fb-elev-1); }
     .msg-input-row { display: flex; gap: 10px; align-items: flex-end; }
-    .msg-textarea { flex: 1; border: 1.5px solid rgba(148, 163, 184, 0.16); border-radius: 16px; padding: 12px 14px; font-size: 13px; font-family: inherit; color: var(--text); resize: none; outline: none; background: #fff; transition: border .18s, box-shadow .18s; }
-    .msg-textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(var(--fb-primary-rgb), 0.15); }
-    .msg-textarea::placeholder { color: var(--faint); }
-    .btn-send { width: 44px; height: 44px; border-radius: 16px; background: var(--navy); color: #fff; border: none; cursor: pointer; display: grid; place-items: center; flex-shrink: 0; transition: background .18s; }
-    .btn-send:hover:not(:disabled) { background: var(--navy2); }
-    .btn-send:disabled { opacity: .45; cursor: not-allowed; }
-    .btn-send svg { fill: rgba(255,255,255,.95); }
-
-    /* Specialist dashboard */
-    .patient-grid { padding: 14px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
-    .patient-card { border: 1px solid var(--border); border-radius: var(--fb-radius-md); padding: 12px; background: var(--surface); }
-    .patient-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-    .patient-av { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--navy), var(--blue)); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
-    .patient-meta strong { display: block; font-size: 12px; font-weight: 700; color: var(--text); font-family: inherit; }
-    .patient-meta span { font-size: 10px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; max-width: 140px; }
-    .alert-badge { margin-left: auto; min-width: 20px; height: 20px; background: var(--red); color: #fff; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; flex-shrink: 0; }
-    .patient-score { display: flex; align-items: center; gap: 8px; }
-    .score-bar-wrap { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
-    .score-bar-fill { height: 100%; border-radius: 3px; background: var(--green); transition: width .5s; }
-    .score-bar-fill[data-risk="red"] { background: var(--red); }
-    .score-bar-fill[data-risk="orange"] { background: var(--amber); }
-    .score-bar-fill[data-risk="green"] { background: var(--green); }
-    .score-val { font-size: 11px; font-weight: 700; color: var(--text); flex-shrink: 0; }
-    .risk-badge { font-size: 9px; font-weight: 700; padding: 1px 7px; border-radius: 20px; }
-    .risk-badge[data-risk="green"] { background: #f0fdf4; color: var(--green); }
-    .risk-badge[data-risk="orange"] { background: #fffbeb; color: var(--amber); }
-    .risk-badge[data-risk="red"] { background: #fef2f2; color: var(--red); }
-    .no-score { font-size: 11px; color: var(--faint); margin: 0; }
-
-    /* Empty states */
-    .empty-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px; text-align: center; }
-    .empty-state svg { stroke: var(--faint); }
-    .empty-state p { margin: 0; font-size: 12px; color: var(--faint); line-height: 1.5; }
-    .empty-state.small { padding: 16px; }
-    .empty-state.small p { font-size: 11px; }
-
-    /* Responsive */
-    @media (max-width: 1024px) {
-      .tele-grid { grid-template-columns: 1fr; }
-      .filter-form { grid-template-columns: 1fr 1fr; }
+    .msg-textarea {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 14px;
+      border: 1.5px solid var(--fb-border);
+      border-radius: var(--fb-radius-sm);
+      color: var(--fb-text);
+      font-size: 14px;
+      resize: vertical;
     }
-    @media (max-width: 768px) {
-      .page-hero { flex-direction: column; align-items: flex-start; }
-      .hero-badges { margin-left: 0; flex-direction: row; flex-wrap: wrap; }
-      .filter-form { grid-template-columns: 1fr; }
-      .f-row { grid-template-columns: 1fr; }
-      .patient-grid { grid-template-columns: 1fr; }
+    .msg-textarea:focus { outline: none; border-color: var(--fb-primary); box-shadow: 0 0 0 4px rgba(var(--fb-primary-rgb), 0.12); }
+    .btn-send {
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      width: 46px;
+      height: 46px;
+      border: none;
+      border-radius: 50%;
+      background: var(--fb-primary);
+      color: #fff;
+      cursor: pointer;
+    }
+    .btn-send:hover:not(:disabled) { background: var(--fb-primary-strong); }
+    .btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Tableau de bord spécialiste */
+    .patient-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+    .patient-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--fb-border); border-radius: 16px; }
+    .patient-header { display: flex; align-items: center; gap: 12px; }
+    .patient-meta { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .patient-meta strong { font-size: 15px; }
+    .patient-meta span { color: var(--fb-muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+    .alert-badge { display: grid; place-items: center; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px; background: var(--fb-danger); color: #fff; font-size: 12.5px; font-weight: 700; }
+    .patient-score { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; }
+    .score-bar-wrap { height: 8px; border-radius: 8px; background: var(--fb-sunken); overflow: hidden; }
+    .score-bar-fill { height: 100%; border-radius: 8px; background: var(--fb-text-mid); }
+    .score-bar-fill[data-risk="green"] { background: var(--fb-success); }
+    .score-bar-fill[data-risk="orange"] { background: var(--fb-accent); }
+    .score-bar-fill[data-risk="red"] { background: var(--fb-danger); }
+    .score-val { font-weight: 700; font-size: 14px; }
+    .risk-badge { grid-column: 1 / -1; justify-self: start; padding: 3px 10px; border-radius: var(--fb-radius-pill); font-size: 12px; font-weight: 700; }
+    .risk-badge[data-risk="green"] { background: rgba(var(--fb-success-rgb), 0.1); color: var(--fb-success-ink); }
+    .risk-badge[data-risk="orange"] { background: var(--fb-accent-soft); color: var(--fb-warning-ink); }
+    .risk-badge[data-risk="red"] { background: rgba(var(--fb-danger-rgb), 0.08); color: var(--fb-danger); }
+    .no-score { margin: 0; color: var(--fb-muted); font-size: 13.5px; }
+
+    @media (max-width: 1024px) {
+      .tele-grid { grid-template-columns: minmax(0, 1fr); }
+      .specialist-layout .right-col { grid-template-columns: minmax(0, 1fr); }
+      .specialist-layout .right-col > :first-child { grid-row: auto; }
+    }
+
+    @media (max-width: 600px) {
+      .filter-form, .f-row { grid-template-columns: minmax(0, 1fr); }
+      .filter-form .btn-filter { justify-self: stretch; }
+      .appt-action-row > button { flex: 1 1 100%; }
     }
   `],
 })
-export class TeleconsultationPage implements OnInit {
+export class TeleconsultationPage implements OnInit, OnDestroy {
+  @ViewChild('thread') private threadRef?: ElementRef<HTMLElement>;
+
+  readonly loadingAppointments = signal(false);
+  readonly appointmentsError   = signal('');
+  readonly loadingMessages     = signal(false);
+  readonly messagesError       = signal('');
+  readonly sendingMessage      = signal(false);
+  readonly isPatient           = computed(() => this.userRole() === 'parent' || this.userRole() === 'adolescent');
+  readonly isSpecialist        = computed(() => this.userRole() === 'specialist');
+  private readonly currentUserId = computed(() => this.authService.currentUser()?._id ?? '');
+  private messagePoll: ReturnType<typeof setInterval> | null = null;
+
   readonly specialists        = signal<TeleconsultationSpecialistProfile[]>([]);
   readonly appointments       = signal<TeleconsultationAppointment[]>([]);
   readonly availableSlots     = signal<Array<{ start: string; end: string; label: string }>>([]);
@@ -835,13 +949,50 @@ export class TeleconsultationPage implements OnInit {
     messageType: ['pre' as 'pre' | 'post', [Validators.required]],
   });
 
+  /** Rendez-vous à ouvrir dès qu'il est chargé (lien d'une notification : ?appointment=…). */
+  private pendingAppointmentId: string | null = null;
+
   constructor(
     private readonly fb: FormBuilder,
     private readonly teleconsultationService: TeleconsultationService,
     private readonly authService: AuthService,
+    private readonly route: ActivatedRoute,
+    private readonly notificationCenter: NotificationService,
+    private readonly destroyRef: DestroyRef,
   ) {}
 
   ngOnInit(): void {
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      const id = params.get('appointment');
+      if (!id) return;
+      this.pendingAppointmentId = id;
+      // Déjà sur la page (clic sur une notification) : la demande peut être nouvelle, on recharge.
+      if (this.userRole()) this.loadAppointments();
+    });
+
+    // Message reçu en temps réel dans la conversation ouverte : on la relit aussitôt.
+    this.notificationCenter.messageEvents$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((event) => {
+      if (this.selectedAppointment()?._id === event.appointmentId) {
+        this.loadMessages(event.appointmentId, true);
+      }
+    });
+
+    // Nouvelle demande, annulation, déplacement, bilan partagé : la liste affichée est rafraîchie.
+    this.notificationCenter.notificationEvents$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((notification) => {
+      if (notification.type.startsWith('appointment-') || notification.type === 'bilan-shared') {
+        this.loadAppointments();
+      }
+      // Message arrivé dans la conversation que l'utilisateur est en train de lire : déjà vu.
+      if (
+        notification.type === 'message-received'
+        && !notification.read
+        && notification.data?.['appointmentId'] === this.selectedAppointment()?._id
+        && document.visibilityState === 'visible'
+      ) {
+        this.notificationCenter.markAsRead(notification);
+      }
+    });
+
     this.authService.me().subscribe({
       next: (response) => {
         this.userRole.set(response.user.role);
@@ -924,36 +1075,139 @@ export class TeleconsultationPage implements OnInit {
     });
   }
 
+  ngOnDestroy(): void {
+    this.stopMessagePolling();
+  }
+
+  /**
+   * Recharge la liste selon le rôle : GET /appointments/me pour un patient, le tableau de
+   * bord clinique pour un spécialiste. Auparavant, toutes les actions (annuler, déplacer,
+   * actualiser…) appelaient /appointments/me, réservé aux patients : le spécialiste
+   * recevait une erreur 403 après chacune d'elles.
+   */
   loadAppointments(): void {
+    if (this.isSpecialist()) {
+      this.loadSpecialistDashboard();
+      return;
+    }
+
+    this.loadingAppointments.set(true);
+    this.appointmentsError.set('');
     this.teleconsultationService.myAppointments().subscribe({
-      next:  (r) => this.appointments.set(r.appointments),
-      error: (e) => this.errorMessage.set(e?.error?.message || 'Impossible de charger vos rendez-vous.'),
+      next: (r) => {
+        this.loadingAppointments.set(false);
+        this.setAppointments(r.appointments);
+      },
+      error: (e) => {
+        this.loadingAppointments.set(false);
+        this.appointmentsError.set(e?.error?.message || 'Impossible de charger vos rendez-vous.');
+      },
     });
   }
 
-  openAppointment(appointment: TeleconsultationAppointment): void {
-    this.selectedAppointment.set(appointment);
-    this.loadMessages(appointment._id);
-  }
-  
+  /** Met à jour la liste et garde le rendez-vous ouvert synchronisé (statut, bilan…). */
+  private setAppointments(appointments: TeleconsultationAppointment[]): void {
+    this.appointments.set(appointments);
+    const selectedId = this.selectedAppointment()?._id;
+    if (selectedId) {
+      const fresh = appointments.find((item) => item._id === selectedId);
+      if (fresh) {
+        this.selectedAppointment.set(fresh);
+      }
+    }
 
-  loadMessages(appointmentId: string): void {
+    if (this.pendingAppointmentId) {
+      const target = appointments.find((item) => item._id === this.pendingAppointmentId);
+      this.pendingAppointmentId = null;
+      if (target) {
+        this.openAppointment(target);
+      }
+    }
+  }
+
+  openAppointment(appointment: TeleconsultationAppointment): void {
+    const changed = this.selectedAppointment()?._id !== appointment._id;
+    this.selectedAppointment.set(appointment);
+    if (changed) {
+      this.messages.set([]);
+    }
+    this.loadMessages(appointment._id);
+    this.startMessagePolling(appointment._id);
+  }
+
+  loadMessages(appointmentId: string, silent = false): void {
+    if (!silent) {
+      this.loadingMessages.set(true);
+      this.messagesError.set('');
+    }
     this.teleconsultationService.getMessages(appointmentId).subscribe({
-      next:  (r) => this.messages.set(r.messages),
-      error: (e) => this.errorMessage.set(e?.error?.message || 'Impossible de charger la messagerie.'),
+      next: (r) => {
+        // Une réponse arrivée après un changement de conversation ne doit pas l'écraser.
+        if (this.selectedAppointment()?._id !== appointmentId) return;
+        this.loadingMessages.set(false);
+        this.messagesError.set('');
+        const hadNew = r.messages.length !== this.messages().length;
+        this.messages.set(r.messages);
+        if (hadNew) this.scrollThreadToBottom();
+      },
+      error: (e) => {
+        this.loadingMessages.set(false);
+        this.messagesError.set(e?.error?.message || 'Impossible de charger la conversation.');
+      },
     });
   }
 
   sendMessage(appointmentId: string): void {
-    if (this.messageForm.invalid) return;
     const raw = this.messageForm.getRawValue();
-    this.teleconsultationService.sendMessage(appointmentId, raw.content || '', raw.messageType || 'pre').subscribe({
+    const content = (raw.content || '').trim();
+    if (!content || this.sendingMessage()) return;
+
+    this.sendingMessage.set(true);
+    this.messagesError.set('');
+    this.teleconsultationService.sendMessage(appointmentId, content, raw.messageType || 'pre').subscribe({
       next: () => {
-        this.messageForm.reset({ messageType: 'pre' });
-        this.loadMessages(appointmentId);
+        this.sendingMessage.set(false);
+        this.messageForm.reset({ messageType: raw.messageType || 'pre' });
+        // On relit la conversation depuis l'API (source de vérité) plutôt que d'ajouter le
+        // message localement : aucun risque de doublon avec le rafraîchissement périodique.
+        this.loadMessages(appointmentId, true);
       },
-      error: (e) => this.errorMessage.set(e?.error?.message || 'Envoi impossible.'),
+      error: (e) => {
+        this.sendingMessage.set(false);
+        this.messagesError.set(e?.error?.message || "Le message n'a pas pu être envoyé. Réessayez.");
+      },
     });
+  }
+
+  private startMessagePolling(appointmentId: string): void {
+    this.stopMessagePolling();
+    this.messagePoll = setInterval(() => {
+      if (document.visibilityState === 'visible' && !this.sendingMessage()) {
+        this.loadMessages(appointmentId, true);
+      }
+    }, MESSAGE_POLL_MS);
+  }
+
+  private stopMessagePolling(): void {
+    if (this.messagePoll) {
+      clearInterval(this.messagePoll);
+      this.messagePoll = null;
+    }
+  }
+
+  private scrollThreadToBottom(): void {
+    setTimeout(() => {
+      const el = this.threadRef?.nativeElement;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  }
+
+  isMine(message: TeleconsultationMessage): boolean {
+    return !!this.currentUserId() && message.sender === this.currentUserId();
+  }
+
+  trackMessage(_index: number, message: TeleconsultationMessage): string {
+    return message._id;
   }
 
   shareBilan(appointmentId: string): void {
@@ -1033,18 +1287,37 @@ export class TeleconsultationPage implements OnInit {
   }
 
   loadSpecialistDashboard(): void {
+    this.loadingAppointments.set(true);
+    this.appointmentsError.set('');
     this.teleconsultationService.specialistDashboard().subscribe({
       next:  (r) => {
+        this.loadingAppointments.set(false);
         this.specialistPatients.set(r.patients);
-        // "Mes rendez-vous" / salle d'attente / messagerie sont un seul et même bloc de
-        // template partagé avec la vue patient (déjà testé et fonctionnel) : on l'alimente
-        // ici avec les rendez-vous du spécialiste plutôt que via GET /appointments/me, qui
-        // lui est interdit (vue "patient"). Sans ce branchement, ce bloc restait vide pour
-        // un compte spécialiste malgré des données bien présentes côté backend.
-        this.appointments.set(r.appointments);
+        // Les demandes reçues alimentent le même bloc « rendez-vous / détail / messagerie »
+        // que la vue patient (GET /appointments/me est réservé aux patients).
+        this.setAppointments(r.appointments);
       },
-      error: (e) => this.errorMessage.set(e?.error?.message || 'Impossible de charger le tableau de bord clinique.'),
+      error: (e) => {
+        this.loadingAppointments.set(false);
+        this.appointmentsError.set(e?.error?.message || 'Impossible de charger vos demandes de téléconsultation.');
+      },
     });
+  }
+
+  patientRoleLabel(role?: string): string {
+    if (role === 'adolescent') return 'Adolescent';
+    if (role === 'parent') return 'Parent';
+    return 'Patient';
+  }
+
+  modeLabel(mode?: string): string {
+    const map: Record<string, string> = { video: 'Vidéo', audio: 'Audio', chat: 'Messagerie' };
+    return map[mode || ''] || '—';
+  }
+
+  formatTime(value: string): string {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   }
 
   /**

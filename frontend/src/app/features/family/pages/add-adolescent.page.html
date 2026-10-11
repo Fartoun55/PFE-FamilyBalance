@@ -1,163 +1,141 @@
-<div class="container">
-  <mat-card class="form-card">
-    <mat-card-header>
-      <h1 mat-card-title>Ajouter un profil adolescent</h1>
-      <mat-card-subtitle>Créez un compte pour votre adolescent</mat-card-subtitle>
-    </mat-card-header>
+<app-page-header
+  eyebrow="Famille"
+  title="Ajouter un adolescent"
+  subtitle="Créez le compte de votre adolescent : il pourra ensuite se connecter à son propre espace."
+  illustration="add-child"
+>
+  <button type="button" class="fb-btn fb-btn--ghost" [disabled]="loading" (click)="cancel()">
+    <mat-icon>arrow_back</mat-icon>
+    Retour au tableau de bord
+  </button>
+</app-page-header>
 
-    <mat-card-content>
-      <form [formGroup]="form" (ngSubmit)="onSubmit()">
-        <!-- Informations personnelles -->
-        <div class="form-section">
-          <h2>Informations personnelles</h2>
+<form class="layout" [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
+  <div class="main">
+    <section class="fb-card">
+      <h2 class="section-title">Informations personnelles</h2>
 
-          <div class="form-row">
-            <mat-form-field class="form-field">
-              <mat-label>Prénom</mat-label>
-              <input matInput formControlName="firstName" required />
-              <mat-error *ngIf="form.get('firstName')?.hasError('required')">
-                Le prénom est obligatoire.
-              </mat-error>
-            </mat-form-field>
+      <div class="form-row">
+        <mat-form-field appearance="outline">
+          <mat-label>Prénom</mat-label>
+          <input matInput formControlName="firstName" required autocomplete="off" />
+          <mat-error *ngIf="form.get('firstName')?.hasError('required')">Le prénom est obligatoire.</mat-error>
+        </mat-form-field>
 
-            <mat-form-field class="form-field">
-              <mat-label>Nom</mat-label>
-              <input matInput formControlName="lastName" required />
-              <mat-error *ngIf="form.get('lastName')?.hasError('required')">
-                Le nom est obligatoire.
-              </mat-error>
-            </mat-form-field>
-          </div>
+        <mat-form-field appearance="outline">
+          <mat-label>Nom</mat-label>
+          <input matInput formControlName="lastName" required autocomplete="off" />
+          <mat-error *ngIf="form.get('lastName')?.hasError('required')">Le nom est obligatoire.</mat-error>
+        </mat-form-field>
+      </div>
 
-          <mat-form-field class="form-field full-width">
-            <mat-label>Adresse email</mat-label>
-            <input matInput formControlName="email" type="email" required />
-            <mat-error *ngIf="form.get('email')?.hasError('required')">
-              L'email est obligatoire.
-            </mat-error>
-            <mat-error *ngIf="form.get('email')?.hasError('email')">
-              Veuillez entrer une adresse email valide.
-            </mat-error>
-          </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Adresse e-mail de l'adolescent</mat-label>
+        <input matInput formControlName="email" type="email" required autocomplete="off" />
+        <mat-error *ngIf="form.get('email')?.hasError('required')">L'adresse e-mail est obligatoire.</mat-error>
+        <mat-error *ngIf="form.get('email')?.hasError('email')">Veuillez saisir une adresse e-mail valide.</mat-error>
+      </mat-form-field>
 
-          <mat-form-field class="form-field full-width">
-            <mat-label>Date de naissance</mat-label>
-            <input matInput formControlName="birthDate" [matDatepicker]="picker" required />
-            <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
-            <mat-datepicker #picker></mat-datepicker>
-            <mat-error *ngIf="form.get('birthDate')?.hasError('required')">
-              La date de naissance est obligatoire.
-            </mat-error>
-            <mat-error *ngIf="form.get('birthDate')?.hasError('outOfRange')">
-              L'âge doit être compris entre 3 et 18 ans.
-            </mat-error>
-          </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Date de naissance</mat-label>
+        <input matInput formControlName="birthDate" [matDatepicker]="picker" required placeholder="JJ/MM/AAAA" />
+        <mat-datepicker-toggle matIconSuffix [for]="picker"></mat-datepicker-toggle>
+        <mat-datepicker #picker></mat-datepicker>
+        <mat-hint>L'adolescent doit avoir entre 3 et 18 ans.</mat-hint>
+        <mat-error *ngIf="form.get('birthDate')?.hasError('required')">La date de naissance est obligatoire.</mat-error>
+        <mat-error *ngIf="form.get('birthDate')?.hasError('outOfRange')">L'âge doit être compris entre 3 et 18 ans.</mat-error>
+      </mat-form-field>
 
-          <div *ngIf="ageSegment" class="age-segment-note">
-            <p>Tranche d'âge détectée : <strong>{{ ageSegment }}</strong></p>
-          </div>
+      <p class="fb-badge age" *ngIf="ageSegment">
+        <mat-icon>cake</mat-icon>
+        Tranche d'âge : {{ ageSegment }}
+      </p>
+    </section>
+
+    <section class="fb-card">
+      <h2 class="section-title">Accès au compte</h2>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Mot de passe</mat-label>
+        <input matInput formControlName="password" [type]="showPassword ? 'text' : 'password'" required autocomplete="new-password" />
+        <button
+          type="button"
+          mat-icon-button
+          matIconSuffix
+          (click)="togglePasswordVisibility()"
+          [attr.aria-label]="showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'"
+        >
+          <mat-icon>{{ showPassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+        </button>
+        <mat-hint>10 caractères minimum.</mat-hint>
+        <mat-error *ngIf="form.get('password')?.hasError('required')">Le mot de passe est obligatoire.</mat-error>
+        <mat-error *ngIf="form.get('password')?.hasError('minlength')">Le mot de passe doit contenir au moins 10 caractères.</mat-error>
+      </mat-form-field>
+
+      <div class="strength" *ngIf="form.get('password')?.value">
+        <div class="strength-track">
+          <div class="strength-fill" [style.width.%]="(passwordStrength / 5) * 100" [style.backgroundColor]="getPasswordStrengthColor()"></div>
         </div>
+        <span [style.color]="getPasswordStrengthColor()">{{ getPasswordStrengthText() }}</span>
+      </div>
 
-        <!-- Sécurité -->
-        <div class="form-section">
-          <h2>Sécurité</h2>
+      <mat-form-field appearance="outline">
+        <mat-label>Confirmer le mot de passe</mat-label>
+        <input
+          matInput
+          formControlName="confirmPassword"
+          [type]="showConfirmPassword ? 'text' : 'password'"
+          required
+          autocomplete="new-password"
+        />
+        <button
+          type="button"
+          mat-icon-button
+          matIconSuffix
+          (click)="toggleConfirmPasswordVisibility()"
+          [attr.aria-label]="showConfirmPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'"
+        >
+          <mat-icon>{{ showConfirmPassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+        </button>
+        <mat-error *ngIf="form.get('confirmPassword')?.hasError('required')">Veuillez confirmer le mot de passe.</mat-error>
+      </mat-form-field>
+      <p
+        class="mismatch"
+        *ngIf="form.get('confirmPassword')?.value && form.get('password')?.value !== form.get('confirmPassword')?.value"
+      >
+        Les mots de passe ne correspondent pas.
+      </p>
+    </section>
+  </div>
 
-          <mat-form-field class="form-field full-width">
-            <mat-label>Mot de passe</mat-label>
-            <input
-              matInput
-              formControlName="password"
-              [type]="showPassword ? 'text' : 'password'"
-              required
-            />
-            <button
-              type="button"
-              mat-icon-button
-              matSuffix
-              (click)="togglePasswordVisibility()"
-              class="toggle-button"
-              [attr.aria-label]="showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'"
-            >
-              <mat-icon>{{ showPassword ? 'visibility_off' : 'visibility' }}</mat-icon>
-            </button>
-            <mat-error *ngIf="form.get('password')?.hasError('required')">
-              Le mot de passe est obligatoire.
-            </mat-error>
-            <mat-error *ngIf="form.get('password')?.hasError('minlength')">
-              Le mot de passe doit contenir au moins 10 caractères.
-            </mat-error>
-          </mat-form-field>
+  <aside class="side">
+    <section class="fb-card consent">
+      <h2 class="section-title">Consentement</h2>
+      <mat-checkbox formControlName="consentGiven" required>
+        Je confirme disposer de l'autorité parentale pour créer ce compte et je consens au traitement des données de mon enfant.
+      </mat-checkbox>
+      <p class="fb-error-text" *ngIf="form.get('consentGiven')?.touched && form.get('consentGiven')?.hasError('required')">
+        Vous devez confirmer votre consentement.
+      </p>
 
-          <div class="password-strength" *ngIf="form.get('password')?.value">
-            <div class="strength-bar">
-              <div
-                class="strength-fill"
-                [style.width.%]="(passwordStrength / 5) * 100"
-                [style.backgroundColor]="getPasswordStrengthColor()"
-              ></div>
-            </div>
-            <span class="strength-text" [style.color]="getPasswordStrengthColor()">
-              Force: {{ getPasswordStrengthText() }}
-            </span>
-          </div>
+      <div class="actions">
+        <button type="submit" class="fb-btn fb-btn--block" [disabled]="loading || form.invalid">
+          <span class="fb-spinner light" *ngIf="loading" aria-hidden="true"></span>
+          <mat-icon *ngIf="!loading">person_add</mat-icon>
+          {{ loading ? 'Création en cours…' : 'Créer le compte' }}
+        </button>
+        <button type="button" class="fb-btn fb-btn--ghost fb-btn--block" [disabled]="loading" (click)="cancel()">
+          Annuler
+        </button>
+      </div>
+    </section>
 
-          <mat-form-field class="form-field full-width">
-            <mat-label>Confirmer le mot de passe</mat-label>
-            <input
-              matInput
-              formControlName="confirmPassword"
-              [type]="showConfirmPassword ? 'text' : 'password'"
-              required
-            />
-            <button
-              type="button"
-              mat-icon-button
-              matSuffix
-              (click)="toggleConfirmPasswordVisibility()"
-              class="toggle-button"
-              [attr.aria-label]="showConfirmPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'"
-            >
-              <mat-icon>{{ showConfirmPassword ? 'visibility_off' : 'visibility' }}</mat-icon>
-            </button>
-            <mat-error *ngIf="form.get('confirmPassword')?.hasError('required')">
-              Veuillez confirmer le mot de passe.
-            </mat-error>
-          </mat-form-field>
-        </div>
-
-        <!-- Consentement -->
-        <div class="form-section">
-          <mat-checkbox formControlName="consentGiven" required>
-            Je confirme que j'ai l'autorisation parentale pour créer ce compte et je consens au
-            traitement des données de mon enfant.
-          </mat-checkbox>
-          <mat-error *ngIf="form.get('consentGiven')?.hasError('required')">
-            Vous devez confirmer votre consentement.
-          </mat-error>
-        </div>
-
-        <!-- Boutons -->
-        <div class="form-actions">
-          <button
-            type="submit"
-            mat-raised-button
-            color="primary"
-            [disabled]="loading || form.invalid"
-          >
-            <mat-spinner
-              *ngIf="loading"
-              diameter="20"
-              strokeWidth="2"
-              class="button-spinner"
-            ></mat-spinner>
-            {{ loading ? 'Création en cours...' : 'Créer le compte' }}
-          </button>
-
-          <button type="button" mat-stroked-button [disabled]="loading" (click)="cancel()">
-            Annuler
-          </button>
-        </div>
-      </form>
-    </mat-card-content>
-  </mat-card>
-</div>
+    <section class="fb-card fb-card--tint info">
+      <mat-icon>info</mat-icon>
+      <p>
+        Un e-mail de confirmation est envoyé à l'adolescent. Ses réponses aux questionnaires restent visibles
+        dans votre tableau de bord famille.
+      </p>
+    </section>
+  </aside>
+</form>

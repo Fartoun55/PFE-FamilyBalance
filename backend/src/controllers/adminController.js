@@ -1,25 +1,16 @@
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const User = require('../models/User');
-const SurveySession = require('../models/SurveySession');
-const ScoreRecord = require('../models/ScoreRecord');
-const RiskAlert = require('../models/RiskAlert');
-const LearningProgress = require('../models/LearningProgress');
-const NewsletterDigest = require('../models/NewsletterDigest');
-const ParentToolkitItem = require('../models/ParentToolkitItem');
-const TeleconsultationAppointment = require('../models/TeleconsultationAppointment');
-const TeleconsultationMessage = require('../models/TeleconsultationMessage');
-const TeleconsultationSpecialistProfile = require('../models/TeleconsultationSpecialistProfile');
 const EducationalResource = require('../models/EducationalResource');
-const RefreshToken = require('../models/RefreshToken');
-const EmailVerificationToken = require('../models/EmailVerificationToken');
-const PasswordResetToken = require('../models/PasswordResetToken');
-const MfaChallenge = require('../models/MfaChallenge');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const { exportToExcel, exportToWord, exportToPDF } = require('../services/exportService');
-
-const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{10,}$/;
+const {
+  PASSWORD_REGEX: passwordRegex,
+  wipeUserData,
+  countUpcomingSpecialistAppointments,
+} = require('../services/accountCleanupService');
+const { syncDirectoryProfile } = require('../services/specialistAdminService');
 
 const sanitizeProfileInput = (payload = {}) => ({
   firstName: typeof payload.firstName === 'string' ? payload.firstName.trim() : undefined,
@@ -251,6 +242,9 @@ const updateAccount = asyncHandler(async (req, res) => {
   );
 
   await user.save();
+  // Les informations du spécialiste (nom, spécialité, ville, tarif, statut) sont répercutées
+  // dans sa fiche d'annuaire de téléconsultation.
+  await syncDirectoryProfile(user);
 
   res.status(200).json({
     status: 'success',
@@ -258,27 +252,6 @@ const updateAccount = asyncHandler(async (req, res) => {
     user: user.toSafeJSON(),
   });
 });
-
-// Supprime toutes les données applicatives rattachées à un utilisateur (sessions, scores,
-// alertes, téléconsultation, jetons d'authentification) pour éviter les références orphelines
-// en base après la suppression d'un compte.
-const wipeUserData = async (userId) => {
-  await Promise.all([
-    SurveySession.deleteMany({ user: userId }),
-    ScoreRecord.deleteMany({ user: userId }),
-    RiskAlert.deleteMany({ user: userId }),
-    LearningProgress.deleteMany({ user: userId }),
-    NewsletterDigest.deleteMany({ user: userId }),
-    ParentToolkitItem.deleteMany({ parent: userId }),
-    TeleconsultationAppointment.deleteMany({ $or: [{ patient: userId }, { specialistUser: userId }] }),
-    TeleconsultationMessage.deleteMany({ $or: [{ sender: userId }, { recipient: userId }] }),
-    TeleconsultationSpecialistProfile.deleteMany({ linkedUser: userId }),
-    RefreshToken.deleteMany({ user: userId }),
-    EmailVerificationToken.deleteMany({ user: userId }),
-    PasswordResetToken.deleteMany({ user: userId }),
-    MfaChallenge.deleteMany({ user: userId }),
-  ]);
-};
 
 const deleteAccount = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
@@ -295,6 +268,17 @@ const deleteAccount = asyncHandler(async (req, res) => {
     const otherAdmins = await User.countDocuments({ role: 'admin', _id: { $ne: user._id } });
     if (otherAdmins === 0) {
       throw new AppError('Impossible de supprimer le dernier compte administrateur.', 400);
+    }
+  }
+
+  // Même règle que la gestion des spécialistes : pas de suppression avec des rendez-vous à venir.
+  if (user.role === 'specialist') {
+    const upcoming = await countUpcomingSpecialistAppointments(user._id);
+    if (upcoming > 0) {
+      throw new AppError(
+        `Suppression impossible : ${upcoming} rendez-vous à venir sont encore prévus avec ce spécialiste. Annulez-les ou désactivez le compte.`,
+        409
+      );
     }
   }
 
@@ -338,6 +322,8 @@ const updateAccountStatus = asyncHandler(async (req, res) => {
 
   user.isActive = isActive;
   await user.save({ validateBeforeSave: false });
+  // Un spécialiste désactivé disparaît de l'annuaire (et y réapparaît une fois réactivé).
+  await syncDirectoryProfile(user);
 
   res.status(200).json({
     status: 'success',

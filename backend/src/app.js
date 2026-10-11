@@ -14,39 +14,16 @@ const familyDashboardRoutes = require('./routes/familyDashboardRoutes');
 const adolescentDashboardRoutes = require('./routes/adolescentDashboardRoutes');
 const educationRoutes = require('./routes/educationRoutes');
 const teleconsultationRoutes = require('./routes/teleconsultationRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
+const { corsOrigin } = require('./config/cors');
 
 const app = express();
-
-const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:4200,http://127.0.0.1:4200')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
-const isLocalDevelopmentOrigin = (origin) => {
-  if (process.env.NODE_ENV === 'production' || !origin) {
-    return false;
-  }
-
-  try {
-    const { hostname } = new URL(origin);
-    return hostname === 'localhost' || hostname === '127.0.0.1';
-  } catch {
-    return false;
-  }
-};
 
 app.use(helmet());
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || isLocalDevelopmentOrigin(origin)) {
-        callback(null, true);
-        return;
-      }
-
-      callback(new Error(`Origin not allowed by CORS: ${origin}`));
-    },
+    origin: corsOrigin,
     credentials: true,
   })
 );
@@ -89,6 +66,7 @@ app.use('/api/family-dashboard', familyDashboardRoutes);
 app.use('/api/adolescent-dashboard', adolescentDashboardRoutes);
 app.use('/api/education', educationRoutes);
 app.use('/api/teleconsultation', teleconsultationRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

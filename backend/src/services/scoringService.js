@@ -3,6 +3,7 @@ const SurveySession = require('../models/SurveySession');
 const ScoreRecord = require('../models/ScoreRecord');
 const RiskAlert = require('../models/RiskAlert');
 const { getSessionForActor, resolveTargetUserId } = require('./surveyService');
+const { notifyScoreStored } = require('./notificationService');
 
 const DYNAMIC_WEIGHTS = {
   '3-6': { comportemental: 0.2, emotionnel: 0.25, social: 0.15, parental: 0.4 },
@@ -265,6 +266,10 @@ const calculateAndStoreScore = async ({ actor, sessionId, trigger = 'manual' }) 
   );
 
   const alert = await createOrUpdateRiskAlert({ userId: ownerId, scoreRecord, riskLevel, riskCategory });
+
+  // Un nouveau calcul sur la même session réutilise le même ScoreRecord : la clé de
+  // déduplication des notifications empêche alors toute double notification.
+  notifyScoreStored({ scoreRecord, alert, actor });
 
   return {
     scoreRecord,

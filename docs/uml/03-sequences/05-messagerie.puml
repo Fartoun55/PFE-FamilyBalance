@@ -1,0 +1,70 @@
+@startuml seq-messagerie
+!include ../_style.iuml
+title Diagramme de séquence — Envoi et réception d'un message sécurisé\n(entre un spécialiste et un parent ou un adolescent)
+autonumber "<b>[0]"
+skinparam maxMessageSize 230
+
+actor "Expéditeur" as E
+box "Frontend de l'expéditeur" #F7F9FD
+  participant "Teleconsultation\nPage" as PageE
+end box
+box "Backend Node.js / Express" #FFFBEB
+  participant "Teleconsultation\nController" as Ctrl
+  participant "Teleconsultation\nService" as Svc
+  participant "Notification\nService" as Notif
+  participant "Socket.IO\n(realtime)" as WS
+end box
+database "MongoDB" as DB
+box "Frontend du destinataire" #F7F9FD
+  participant "NotificationService\n(frontend)" as NotifD
+  participant "Teleconsultation\nPage" as PageD
+end box
+actor "Destinataire" as D
+
+E -> PageE : rédige le message (pré ou post-consultation)
+PageE -> Ctrl : POST /api/teleconsultation/appointments/:id/messages\n{ content, messageType }
+Ctrl -> Svc : sendAppointmentMessage(id, user, payload)
+Svc -> DB : TeleconsultationAppointment.findById() + fiche spécialiste
+alt rendez-vous introuvable
+  Svc --> PageE : 404
+else l'utilisateur n'est ni le patient ni le spécialiste
+  Svc --> PageE : 403 « Accès refusé à ce rendez-vous »
+else contenu vide ou > 2000 caractères
+  Svc --> PageE : 400
+else autorisé
+  Svc -> Svc : destinataire = spécialiste si expéditeur = patient,\nsinon patient
+  Svc -> Svc : encryptContent() — AES-256-GCM,\nclé dérivée de l'identifiant du rendez-vous
+  Svc -> DB : TeleconsultationMessage.create(encryptedContent,\niv, authTag, sender, recipient)
+  Svc -> Notif : notifyMessageReceived(appt, sender, recipientId, message)
+  activate Notif
+  Notif -> WS : emitToUser(destinataire, 'message:new')
+  Notif -> DB : notification « messages » regroupée par\nconversation tant qu'elle n'est pas lue (count + 1)
+  Notif -> WS : emitToUser(destinataire, 'notification:new | updated')
+  deactivate Notif
+  Svc --> Ctrl : message déchiffré { sender, senderName, content }
+  Ctrl --> PageE : 201
+  PageE -> Ctrl : GET …/messages (relecture, sans doublon)
+  PageE --> E : bulle « Vous » affichée
+
+  WS ->> NotifD : message:new { appointmentId }
+  NotifD ->> PageD : messageEvents$
+  alt conversation ouverte chez le destinataire
+    PageD -> Ctrl : GET /appointments/:id/messages
+    Ctrl -> Svc : getAppointmentMessages(id, user)
+    Svc -> DB : messages triés + identité de l'expéditeur
+    Svc -> Svc : decryptContent() pour chaque message
+    Svc --> PageD : 200 messages
+    PageD --> D : nouveau message affiché instantanément
+    WS ->> NotifD : notification:new (message-received)
+    NotifD -> Ctrl : PATCH /api/notifications/:id/read\n(lu automatiquement : conversation visible)
+  else conversation fermée
+    WS ->> NotifD : notification:new
+    NotifD --> D : badge « Nouveau message de … » sur la cloche
+  end
+end
+
+note over PageD
+  Si la connexion temps réel est coupée, la conversation
+  ouverte est relue toutes les 60 s (filet de sécurité).
+end note
+@enduml
