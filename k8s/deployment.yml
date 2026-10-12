@@ -1,0 +1,201 @@
+# Déploiement Kubernetes (AKS) de FamilyBalance.
+# L'image est référencée sans tag : le pipeline (KubernetesManifest@1) y ajoute
+# le tag de build. Remplacez familybalanceacr.azurecr.io par votre ACR.
+#
+# Prérequis (une seule fois, hors dépôt : ne jamais versionner de secrets) :
+#   kubectl create secret generic familybalance-secrets \
+#     --from-literal=MONGODB_URI='mongodb+srv://...' \
+#     --from-literal=JWT_ACCESS_SECRET="$(openssl rand -hex 32)" \
+#     --from-literal=JWT_REFRESH_SECRET="$(openssl rand -hex 32)" \
+#     --from-literal=ADMIN_REGISTRATION_KEY="$(openssl rand -hex 16)" \
+#     --from-literal=TELECONSULTATION_SECRET="$(openssl rand -hex 32)" \
+#     --from-literal=SMTP_HOST=... --from-literal=SMTP_USER=... \
+#     --from-literal=SMTP_PASS=... --from-literal=SMTP_FROM='FamilyBalance <no-reply@...>'
+#   az aks update -n <cluster> -g <groupe> --attach-acr familybalanceacr
+
+# ---------------- CONFIGURATION ----------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: familybalance-config
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  # Origine(s) publique(s) du site, séparées par des virgules (CORS + Socket.IO).
+  # À remplacer par l'adresse réelle (IP du LoadBalancer ou nom de domaine).
+  CLIENT_ORIGIN: "https://familybalance.example.com"
+  # Un proxy de confiance : le nginx du frontend.
+  TRUST_PROXY: "1"
+  JWT_ACCESS_EXPIRES_IN: "15m"
+  JWT_REFRESH_EXPIRES_IN: "7d"
+  SMTP_PORT: "587"
+---
+# ---------------- STOCKAGE DES FICHIERS TÉLÉVERSÉS ----------------
+# Les ressources éducatives (images, PDF) sont écrites dans /app/uploads :
+# sans volume, elles disparaîtraient à chaque redémarrage du pod.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: familybalance-uploads
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 5Gi
+---
+# ---------------- BACKEND ----------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: familybalance-backend
+  labels:
+    app: familybalance-backend
+spec:
+  # 1 réplique : le temps réel (Socket.IO) et le stockage local des fichiers ne
+  # sont pas partagés entre pods. Pour monter en charge : adaptateur Redis
+  # pour Socket.IO + stockage partagé (Azure Files / Blob).
+  replicas: 1
+  strategy:
+    type: Recreate   # le disque ReadWriteOnce ne peut être attaché qu'à un pod
+  selector:
+    matchLabels:
+      app: familybalance-backend
+  template:
+    metadata:
+      labels:
+        app: familybalance-backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000      # utilisateur « node » de l'image
+        fsGroup: 1000        # le volume monté devient accessible en écriture
+      containers:
+        - name: backend
+          image: familybalanceacr.azurecr.io/familybalance-backend
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: familybalance-config
+          env:
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef: { name: familybalance-secrets, key: MONGODB_URI }
+            - name: JWT_ACCESS_SECRET
+              valueFrom:
+                secretKeyRef: { name: familybalance-secrets, key: JWT_ACCESS_SECRET }
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef: { name: familybalance-secrets, key: JWT_REFRESH_SECRET }
+            - name: ADMIN_REGISTRATION_KEY
+              valueFrom:
+                secretKeyRef: { name: familybalance-secrets, key: ADMIN_REGISTRATION_KEY }
+            - name: TELECONSULTATION_SECRET
+              valueFrom:
+                secretKeyRef: { name: familybalance-secrets, key: TELECONSULTATION_SECRET }
+            - name: SMTP_HOST
+              valueFrom:
+                secretKeyRef: { name: familybalance-secrets, key: SMTP_HOST, optional: true }
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef: { name: familybalance-secrets, key: SMTP_USER, optional: true }
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef: { name: familybalance-secrets, key: SMTP_PASS, optional: true }
+            - name: SMTP_FROM
+              valueFrom:
+                secretKeyRef: { name: familybalance-secrets, key: SMTP_FROM, optional: true }
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+          readinessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: familybalance-uploads
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: familybalance-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: familybalance-backend
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+# ---------------- FRONTEND ----------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: familybalance-frontend
+  labels:
+    app: familybalance-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: familybalance-frontend
+  template:
+    metadata:
+      labels:
+        app: familybalance-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: familybalanceacr.azurecr.io/familybalance-frontend
+          ports:
+            - containerPort: 80
+          env:
+            - name: BACKEND_UPSTREAM
+              value: "http://familybalance-backend:3000"
+          readinessProbe:
+            httpGet: { path: /healthz, port: 80 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 80 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: familybalance-frontend
+spec:
+  type: LoadBalancer
+  # Conserve l'IP réelle des visiteurs (utile au limiteur de débit de l'API).
+  externalTrafficPolicy: Local
+  selector:
+    app: familybalance-frontend
+  ports:
+    - port: 80
+      targetPort: 80

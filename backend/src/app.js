@@ -20,6 +20,14 @@ const { corsOrigin } = require('./config/cors');
 
 const app = express();
 
+// Derrière un proxy (nginx du frontend en production), l'adresse du client arrive dans
+// X-Forwarded-For : sans cette option, le limiteur de débit verrait tous les utilisateurs
+// sous l'IP du proxy. TRUST_PROXY = nombre de proxys de confiance (ex. 1).
+if (process.env.TRUST_PROXY) {
+  const hops = Number(process.env.TRUST_PROXY);
+  app.set('trust proxy', Number.isNaN(hops) ? process.env.TRUST_PROXY : hops);
+}
+
 app.use(helmet());
 app.use(
   cors({

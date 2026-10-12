@@ -1,0 +1,147 @@
+# Pipeline Azure DevOps de FamilyBalance
+#   1. CI     : installation, vérification du backend, build Angular de production
+#   2. Images : construction et envoi des images backend / frontend vers Azure Container Registry
+#   3. Deploy : déploiement des manifestes k8s/ sur Azure Kubernetes Service
+#
+# À configurer une fois dans Azure DevOps (Project settings > Service connections) :
+#   - une connexion « Docker Registry » vers l'ACR      -> variable dockerRegistryServiceConnection
+#   - une connexion « Kubernetes » vers le cluster AKS  -> variable kubernetesServiceConnection
+# Et créer l'environnement « familybalance-production » (Pipelines > Environments).
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  dockerRegistryServiceConnection: 'familybalance-acr'
+  kubernetesServiceConnection: 'familybalance-aks'
+  containerRegistry: 'familybalanceacr.azurecr.io'
+  backendRepository: 'familybalance-backend'
+  frontendRepository: 'familybalance-frontend'
+  k8sNamespace: 'default'
+  imageTag: '$(Build.BuildId)'
+  nodeVersion: '20.x'
+  vmImage: 'ubuntu-latest'
+
+stages:
+  # ------------------------------------------------------------------ CI
+  - stage: CI
+    displayName: 'Vérification et build'
+    jobs:
+      - job: Backend
+        displayName: 'Backend (Node.js)'
+        pool:
+          vmImage: $(vmImage)
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+            displayName: 'Node.js $(nodeVersion)'
+
+          - script: npm ci
+            workingDirectory: backend
+            displayName: 'npm ci'
+
+          - script: |
+              set -e
+              find src -name '*.js' -print0 | xargs -0 -n1 node --check
+              node -e "require('./src/app')"
+            workingDirectory: backend
+            displayName: 'Vérification syntaxique et chargement de l''application'
+            env:
+              NODE_ENV: test
+
+          - script: npm audit --omit=dev --audit-level=critical
+            workingDirectory: backend
+            displayName: 'Audit des dépendances (vulnérabilités critiques)'
+            continueOnError: true
+
+      - job: Frontend
+        displayName: 'Frontend (Angular)'
+        pool:
+          vmImage: $(vmImage)
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+            displayName: 'Node.js $(nodeVersion)'
+
+          - script: npm ci
+            workingDirectory: frontend
+            displayName: 'npm ci'
+
+          - script: npm run build -- --configuration production
+            workingDirectory: frontend
+            displayName: 'Build Angular de production'
+
+  # ------------------------------------------------------------------ Images
+  - stage: Images
+    displayName: 'Images Docker'
+    dependsOn: CI
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: BuildPush
+        displayName: 'Construction et envoi vers ACR'
+        pool:
+          vmImage: $(vmImage)
+        steps:
+          - task: Docker@2
+            displayName: 'Image backend'
+            inputs:
+              command: buildAndPush
+              containerRegistry: $(dockerRegistryServiceConnection)
+              repository: $(backendRepository)
+              Dockerfile: backend/Dockerfile.backend
+              buildContext: backend
+              tags: |
+                $(imageTag)
+                latest
+
+          - task: Docker@2
+            displayName: 'Image frontend'
+            inputs:
+              command: buildAndPush
+              containerRegistry: $(dockerRegistryServiceConnection)
+              repository: $(frontendRepository)
+              Dockerfile: frontend/Dockerfile.frontend
+              buildContext: frontend
+              tags: |
+                $(imageTag)
+                latest
+
+          - publish: k8s
+            artifact: manifests
+            displayName: 'Publication des manifestes Kubernetes'
+
+  # ------------------------------------------------------------------ Deploy
+  - stage: Deploy
+    displayName: 'Déploiement AKS'
+    dependsOn: Images
+    condition: succeeded()
+    jobs:
+      - deployment: DeployAKS
+        displayName: 'Déploiement sur AKS'
+        pool:
+          vmImage: $(vmImage)
+        environment: 'familybalance-production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: KubernetesManifest@1
+                  displayName: 'Application des manifestes'
+                  inputs:
+                    action: deploy
+                    connectionType: kubernetesServiceConnection
+                    kubernetesServiceConnection: $(kubernetesServiceConnection)
+                    namespace: $(k8sNamespace)
+                    manifests: $(Pipeline.Workspace)/manifests/deployment.yml
+                    containers: |
+                      $(containerRegistry)/$(backendRepository):$(imageTag)
+                      $(containerRegistry)/$(frontendRepository):$(imageTag)
