@@ -1,10 +1,10 @@
-# Déploiement Kubernetes (AKS) de FamilyBalance.
-# L'image est référencée sans tag : le pipeline (KubernetesManifest@1) y ajoute
-# le tag de build. Remplacez familybalanceacr.azurecr.io par votre ACR.
+# API FamilyBalance (Node.js / Express / Socket.IO).
+# L'image est référencée sans tag : le pipeline (KubernetesManifest@1) y ajoute le tag
+# de build. Remplacez familybalanceacr.azurecr.io par votre Azure Container Registry.
 #
 # Prérequis (une seule fois, hors dépôt : ne jamais versionner de secrets) :
-#   kubectl create secret generic familybalance-secrets \
-#     --from-literal=MONGODB_URI='mongodb+srv://...' \
+#   kubectl -n familybalance create secret generic familybalance-secrets \
+#     --from-literal=MONGODB_URI='mongodb://familybalance:<mot de passe mongodb-secret>@mongodb:27017/familybalance?authSource=admin' \
 #     --from-literal=JWT_ACCESS_SECRET="$(openssl rand -hex 32)" \
 #     --from-literal=JWT_REFRESH_SECRET="$(openssl rand -hex 32)" \
 #     --from-literal=ADMIN_REGISTRATION_KEY="$(openssl rand -hex 16)" \
@@ -18,14 +18,14 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: familybalance-config
+  namespace: familybalance
 data:
   NODE_ENV: "production"
   PORT: "3000"
-  # Origine(s) publique(s) du site, séparées par des virgules (CORS + Socket.IO).
-  # À remplacer par l'adresse réelle (IP du LoadBalancer ou nom de domaine).
+  # Origine publique du site (CORS + Socket.IO) : même domaine que dans ingress.yaml.
   CLIENT_ORIGIN: "https://familybalance.example.com"
-  # Un proxy de confiance : le nginx du frontend.
-  TRUST_PROXY: "1"
+  # Proxys de confiance devant l'API : contrôleur Ingress puis nginx du frontend.
+  TRUST_PROXY: "2"
   JWT_ACCESS_EXPIRES_IN: "15m"
   JWT_REFRESH_EXPIRES_IN: "7d"
   SMTP_PORT: "587"
@@ -37,6 +37,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: familybalance-uploads
+  namespace: familybalance
 spec:
   accessModes:
     - ReadWriteOnce
@@ -45,11 +46,12 @@ spec:
     requests:
       storage: 5Gi
 ---
-# ---------------- BACKEND ----------------
+# ---------------- DÉPLOIEMENT ----------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: familybalance-backend
+  namespace: familybalance
   labels:
     app: familybalance-backend
 spec:
@@ -133,10 +135,13 @@ spec:
           persistentVolumeClaim:
             claimName: familybalance-uploads
 ---
+# ---------------- SERVICE ----------------
+# Interne au cluster : seul le nginx du frontend appelle l'API.
 apiVersion: v1
 kind: Service
 metadata:
   name: familybalance-backend
+  namespace: familybalance
 spec:
   type: ClusterIP
   selector:
@@ -144,58 +149,3 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
----
-# ---------------- FRONTEND ----------------
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: familybalance-frontend
-  labels:
-    app: familybalance-frontend
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: familybalance-frontend
-  template:
-    metadata:
-      labels:
-        app: familybalance-frontend
-    spec:
-      containers:
-        - name: frontend
-          image: familybalanceacr.azurecr.io/familybalance-frontend
-          ports:
-            - containerPort: 80
-          env:
-            - name: BACKEND_UPSTREAM
-              value: "http://familybalance-backend:3000"
-          readinessProbe:
-            httpGet: { path: /healthz, port: 80 }
-            initialDelaySeconds: 3
-            periodSeconds: 10
-          livenessProbe:
-            httpGet: { path: /healthz, port: 80 }
-            initialDelaySeconds: 10
-            periodSeconds: 20
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 250m
-              memory: 256Mi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: familybalance-frontend
-spec:
-  type: LoadBalancer
-  # Conserve l'IP réelle des visiteurs (utile au limiteur de débit de l'API).
-  externalTrafficPolicy: Local
-  selector:
-    app: familybalance-frontend
-  ports:
-    - port: 80
-      targetPort: 80

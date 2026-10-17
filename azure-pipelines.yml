@@ -1,7 +1,7 @@
 # Pipeline Azure DevOps de FamilyBalance
 #   1. CI     : installation, vérification du backend, build Angular de production
 #   2. Images : construction et envoi des images backend / frontend vers Azure Container Registry
-#   3. Deploy : déploiement des manifestes k8s/ sur Azure Kubernetes Service
+#   3. Deploy : déploiement des manifestes k8s/ (namespace, MongoDB, backend, frontend, Ingress) sur AKS
 #
 # À configurer une fois dans Azure DevOps (Project settings > Service connections) :
 #   - une connexion « Docker Registry » vers l'ACR      -> variable dockerRegistryServiceConnection
@@ -24,7 +24,7 @@ variables:
   containerRegistry: 'familybalanceacr.azurecr.io'
   backendRepository: 'familybalance-backend'
   frontendRepository: 'familybalance-frontend'
-  k8sNamespace: 'default'
+  k8sNamespace: 'familybalance'
   imageTag: '$(Build.BuildId)'
   nodeVersion: '20.x'
   vmImage: 'ubuntu-latest'
@@ -56,6 +56,10 @@ stages:
             displayName: 'Vérification syntaxique et chargement de l''application'
             env:
               NODE_ENV: test
+
+          - script: npm test -- --ci
+            workingDirectory: backend
+            displayName: 'Tests de l''API (Jest)'
 
           - script: npm audit --omit=dev --audit-level=critical
             workingDirectory: backend
@@ -97,7 +101,7 @@ stages:
               command: buildAndPush
               containerRegistry: $(dockerRegistryServiceConnection)
               repository: $(backendRepository)
-              Dockerfile: backend/Dockerfile.backend
+              Dockerfile: backend/Dockerfile
               buildContext: backend
               tags: |
                 $(imageTag)
@@ -109,7 +113,7 @@ stages:
               command: buildAndPush
               containerRegistry: $(dockerRegistryServiceConnection)
               repository: $(frontendRepository)
-              Dockerfile: frontend/Dockerfile.frontend
+              Dockerfile: frontend/Dockerfile
               buildContext: frontend
               tags: |
                 $(imageTag)
@@ -134,14 +138,27 @@ stages:
           runOnce:
             deploy:
               steps:
+                # Le namespace doit exister avant les ressources qu'il contient.
                 - task: KubernetesManifest@1
-                  displayName: 'Application des manifestes'
+                  displayName: 'Namespace'
+                  inputs:
+                    action: deploy
+                    connectionType: kubernetesServiceConnection
+                    kubernetesServiceConnection: $(kubernetesServiceConnection)
+                    manifests: $(Pipeline.Workspace)/manifests/namespace.yaml
+
+                - task: KubernetesManifest@1
+                  displayName: 'MongoDB, backend, frontend et Ingress'
                   inputs:
                     action: deploy
                     connectionType: kubernetesServiceConnection
                     kubernetesServiceConnection: $(kubernetesServiceConnection)
                     namespace: $(k8sNamespace)
-                    manifests: $(Pipeline.Workspace)/manifests/deployment.yml
+                    manifests: |
+                      $(Pipeline.Workspace)/manifests/mongodb.yaml
+                      $(Pipeline.Workspace)/manifests/backend.yaml
+                      $(Pipeline.Workspace)/manifests/frontend.yaml
+                      $(Pipeline.Workspace)/manifests/ingress.yaml
                     containers: |
                       $(containerRegistry)/$(backendRepository):$(imageTag)
                       $(containerRegistry)/$(frontendRepository):$(imageTag)

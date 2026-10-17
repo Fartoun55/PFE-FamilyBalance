@@ -3,7 +3,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const User = require('../models/User');
-const { env } = require('../config/env');
+const connectDB = require('../config/db');
 
 const generateAvatarUrl = (firstName = '', lastName = '') => {
   const name = encodeURIComponent(`${firstName || ''} ${lastName || ''}`.trim());
@@ -12,7 +12,7 @@ const generateAvatarUrl = (firstName = '', lastName = '') => {
 
 (async () => {
   try {
-    await mongoose.connect(env.mongoUri, { maxPoolSize: 5 });
+    await connectDB();
     console.log('Mongo connected');
 
     const adolescents = await User.find({ role: 'adolescent', avatarUrl: { $exists: false } }).limit(500).lean();

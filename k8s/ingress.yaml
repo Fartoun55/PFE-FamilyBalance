@@ -1,0 +1,45 @@
+# Point d'entrée public en HTTPS.
+#
+# Prérequis (une seule fois sur le cluster) :
+#   - contrôleur ingress-nginx :
+#       helm install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace \
+#         --set controller.service.externalTrafficPolicy=Local
+#   - cert-manager et un ClusterIssuer « letsencrypt-prod » (certificat TLS automatique)
+#   - un enregistrement DNS du domaine vers l'IP publique du contrôleur ingress-nginx
+# Remplacez familybalance.example.com par votre domaine (et CLIENT_ORIGIN dans backend.yaml).
+#
+# HTTPS est indispensable : le cookie de session (jeton de rafraîchissement) est marqué
+# « Secure » en production et n'est pas conservé par le navigateur en HTTP simple.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: familybalance
+  namespace: familybalance
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Téléversement des ressources éducatives (15 Mo max côté API)
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+    # Connexions WebSocket (Socket.IO) longues
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - familybalance.example.com
+      secretName: familybalance-tls
+  rules:
+    - host: familybalance.example.com
+      http:
+        paths:
+          # Tout passe par le frontend : son nginx sert Angular et relaie /api,
+          # /socket.io et /uploads au backend (même origine, pas de CORS).
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: familybalance-frontend
+                port:
+                  number: 80

@@ -5,14 +5,20 @@ const app = require('./app');
 const connectDB = require('./config/db');
 const { initRealtime } = require('./realtime/socket');
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 3000;
+// Toutes les interfaces : indispensable dans un conteneur, où le trafic arrive par
+// l'interface réseau du pod et non par localhost.
+const HOST = process.env.HOST || '0.0.0.0';
 
 const start = async () => {
   try {
-    await connectDB();
-    const server = app.listen(PORT, () => {
+    const connection = await connectDB();
+    // eslint-disable-next-line no-console
+    console.log(`MongoDB connecté : ${connection.host}:${connection.port}/${connection.name}`);
+
+    const server = app.listen(PORT, HOST, () => {
       // eslint-disable-next-line no-console
-      console.log(`FamilyBalance API running on port ${PORT}`);
+      console.log(`FamilyBalance API running on ${HOST}:${PORT}`);
     });
 
     // Notifications et messages en temps réel, sur le même port que l'API.

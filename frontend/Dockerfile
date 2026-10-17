@@ -1,5 +1,5 @@
 # Image du frontend FamilyBalance (Angular 17 servi par nginx)
-# Construction : docker build -f frontend/Dockerfile.frontend -t familybalance-frontend frontend
+# Construction : docker build -t familybalance-frontend frontend
 
 # ---------- Étape 1 : build Angular ----------
 FROM node:20-alpine AS build
@@ -19,9 +19,9 @@ FROM nginx:1.27-alpine
 # l'image nginx officielle). Par défaut : le Service Kubernetes du backend.
 ENV BACKEND_UPSTREAM=http://familybalance-backend:3000
 
-# Le .template est traité par /docker-entrypoint.d/20-envsubst-on-templates.sh
-# et écrit dans /etc/nginx/conf.d/default.conf (remplace la configuration par défaut).
-COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+# nginx.conf est copié comme modèle : /docker-entrypoint.d/20-envsubst-on-templates.sh
+# y remplace ${BACKEND_UPSTREAM} et écrit /etc/nginx/conf.d/default.conf au démarrage.
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 # Angular 17 (builder « application ») produit dist/familybalance-frontend/browser
 COPY --from=build /app/dist/familybalance-frontend/browser /usr/share/nginx/html

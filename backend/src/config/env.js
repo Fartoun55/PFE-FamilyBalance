@@ -1,7 +1,8 @@
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
-  port: Number(process.env.PORT || 5000),
-  mongoUri: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/familybalance',
+  port: Number(process.env.PORT || 3000),
+  // Pas de valeur par défaut : la connexion échoue clairement si MONGODB_URI manque (voir db.js).
+  mongoUri: process.env.MONGODB_URI,
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET || 'dev-access-secret-change-me',
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-change-me',
   adminRegistrationKey: process.env.ADMIN_REGISTRATION_KEY || 'familybalance-admin-dev-key',

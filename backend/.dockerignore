@@ -1,13 +1,6 @@
-# Ne jamais embarquer de secrets ni de données locales dans l'image
+node_modules
+.git
 .env
 .env.*
-uploads/
-node_modules/
-npm-debug.log*
-coverage/
-.git
-.gitignore
-.vscode/
-Dockerfile*
-.dockerignore
-README.md
+coverage
+npm-debug.log

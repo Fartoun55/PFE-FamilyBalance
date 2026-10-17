@@ -1,0 +1,56 @@
+# Frontend FamilyBalance (Angular servi par nginx, qui relaie /api, /socket.io et
+# /uploads vers le Service du backend). Exposé au public par ingress.yaml.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: familybalance-frontend
+  namespace: familybalance
+  labels:
+    app: familybalance-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: familybalance-frontend
+  template:
+    metadata:
+      labels:
+        app: familybalance-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: familybalanceacr.azurecr.io/familybalance-frontend
+          ports:
+            - containerPort: 80
+          env:
+            - name: BACKEND_UPSTREAM
+              value: "http://familybalance-backend:3000"
+          readinessProbe:
+            httpGet: { path: /healthz, port: 80 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 80 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: familybalance-frontend
+  namespace: familybalance
+spec:
+  type: ClusterIP
+  selector:
+    app: familybalance-frontend
+  ports:
+    - port: 80
+      targetPort: 80
