@@ -1,12 +1,24 @@
 # Pipeline Azure DevOps de FamilyBalance
 #   1. CI     : installation, vérification du backend, build Angular de production
 #   2. Images : construction et envoi des images backend / frontend vers Azure Container Registry
-#   3. Deploy : déploiement des manifestes k8s/ (namespace, MongoDB, backend, frontend, Ingress) sur AKS
+#   3. Deploy : déploiement des manifestes k8s/ sur le cluster MicroK8s local,
+#               via l'agent self-hosted « ibrahim-virtual-machine » (pool Default)
 #
-# À configurer une fois dans Azure DevOps (Project settings > Service connections) :
-#   - une connexion « Docker Registry » vers l'ACR      -> variable dockerRegistryServiceConnection
-#   - une connexion « Kubernetes » vers le cluster AKS  -> variable kubernetesServiceConnection
-# Et créer l'environnement « familybalance-production » (Pipelines > Environments).
+# Pourquoi un agent self-hosted ?
+#   Le cluster MicroK8s est sur une IP privée (192.168.x.x) : Azure DevOps (cloud) refuse
+#   une service connection Kubernetes vers ce type d'adresse. L'agent installé sur la VM
+#   exécute donc kubectl localement, sans service connection Kubernetes.
+#
+# À configurer une fois dans Azure DevOps :
+#   - Service connection « Docker Registry » vers l'ACR  -> variable dockerRegistryServiceConnection
+#   - Variables secrètes du pipeline (Pipelines > Edit > Variables) :
+#       ACR_USERNAME  : utilisateur admin de l'ACR (Portail Azure > ACR > Access keys)
+#       ACR_PASSWORD  : mot de passe admin de l'ACR (cocher « Keep this value secret »)
+#   - Environnement « familybalance-production » (Pipelines > Environments)
+#
+# Prérequis sur la VM :
+#   - agent démarré en tant qu'ibrahim, membre du groupe microk8s
+#   - microk8s enable dns ingress
 
 trigger:
   branches:
@@ -20,14 +32,17 @@ pr:
 
 variables:
   dockerRegistryServiceConnection: 'familybalance-acr'
-  kubernetesServiceConnection: 'familybalance-aks'
   containerRegistry: 'familybalanceacr.azurecr.io'
   backendRepository: 'familybalance-backend'
   frontendRepository: 'familybalance-frontend'
   k8sNamespace: 'familybalance'
+  imagePullSecret: 'acr-secret'
   imageTag: '$(Build.BuildId)'
   nodeVersion: '20.x'
   vmImage: 'ubuntu-latest'
+  selfHostedPool: 'Default'
+  # Chemin complet : le service de l'agent n'a pas forcément /snap/bin dans son PATH
+  kubectl: '/snap/bin/microk8s kubectl'
 
 stages:
   # ------------------------------------------------------------------ CI
@@ -125,40 +140,70 @@ stages:
 
   # ------------------------------------------------------------------ Deploy
   - stage: Deploy
-    displayName: 'Déploiement AKS'
+    displayName: 'Déploiement MicroK8s'
     dependsOn: Images
     condition: succeeded()
     jobs:
-      - deployment: DeployAKS
-        displayName: 'Déploiement sur AKS'
+      - deployment: DeployMicroK8s
+        displayName: 'Déploiement sur MicroK8s (agent self-hosted)'
         pool:
-          vmImage: $(vmImage)
+          name: $(selfHostedPool)
         environment: 'familybalance-production'
         strategy:
           runOnce:
             deploy:
               steps:
-                # Le namespace doit exister avant les ressources qu'il contient.
-                - task: KubernetesManifest@1
-                  displayName: 'Namespace'
-                  inputs:
-                    action: deploy
-                    connectionType: kubernetesServiceConnection
-                    kubernetesServiceConnection: $(kubernetesServiceConnection)
-                    manifests: $(Pipeline.Workspace)/manifests/namespace.yaml
+                # L'artefact « manifests » est téléchargé automatiquement dans $(Pipeline.Workspace)/manifests
+                - script: |
+                    set -e
+                    $(kubectl) version
+                    $(kubectl) get nodes
+                  displayName: 'Vérification de l''accès au cluster'
 
-                - task: KubernetesManifest@1
+                # Le namespace doit exister avant les ressources qu'il contient.
+                - script: $(kubectl) apply -f $(Pipeline.Workspace)/manifests/namespace.yaml
+                  displayName: 'Namespace'
+
+                # Secret pour que MicroK8s puisse tirer les images depuis l'ACR,
+                # attaché au service account par défaut du namespace.
+                - script: |
+                    set -e
+                    $(kubectl) create secret docker-registry $(imagePullSecret) \
+                      --namespace $(k8sNamespace) \
+                      --docker-server=$(containerRegistry) \
+                      --docker-username="$ACR_USERNAME" \
+                      --docker-password="$ACR_PASSWORD" \
+                      --dry-run=client -o yaml | $(kubectl) apply -f -
+                    $(kubectl) patch serviceaccount default -n $(k8sNamespace) \
+                      -p '{"imagePullSecrets":[{"name":"$(imagePullSecret)"}]}'
+                  displayName: 'Secret de pull ACR'
+                  env:
+                    ACR_USERNAME: $(ACR_USERNAME)
+                    ACR_PASSWORD: $(ACR_PASSWORD)
+
+                # Remplace le tag des images par celui du build (équivalent de « containers: » de KubernetesManifest)
+                - script: |
+                    set -e
+                    cd $(Pipeline.Workspace)/manifests
+                    sed -i -E "s#(image:[[:space:]]*$(containerRegistry)/$(backendRepository))(:[^[:space:]]*)?#\1:$(imageTag)#" backend.yaml
+                    sed -i -E "s#(image:[[:space:]]*$(containerRegistry)/$(frontendRepository))(:[^[:space:]]*)?#\1:$(imageTag)#" frontend.yaml
+                    grep -H "image:" backend.yaml frontend.yaml
+                  displayName: 'Injection du tag d''image $(imageTag)'
+
+                - script: |
+                    set -e
+                    cd $(Pipeline.Workspace)/manifests
+                    $(kubectl) apply -n $(k8sNamespace) -f mongodb.yaml
+                    $(kubectl) apply -n $(k8sNamespace) -f backend.yaml
+                    $(kubectl) apply -n $(k8sNamespace) -f frontend.yaml
+                    $(kubectl) apply -n $(k8sNamespace) -f ingress.yaml
                   displayName: 'MongoDB, backend, frontend et Ingress'
-                  inputs:
-                    action: deploy
-                    connectionType: kubernetesServiceConnection
-                    kubernetesServiceConnection: $(kubernetesServiceConnection)
-                    namespace: $(k8sNamespace)
-                    manifests: |
-                      $(Pipeline.Workspace)/manifests/mongodb.yaml
-                      $(Pipeline.Workspace)/manifests/backend.yaml
-                      $(Pipeline.Workspace)/manifests/frontend.yaml
-                      $(Pipeline.Workspace)/manifests/ingress.yaml
-                    containers: |
-                      $(containerRegistry)/$(backendRepository):$(imageTag)
-                      $(containerRegistry)/$(frontendRepository):$(imageTag)
+
+                - script: |
+                    set -e
+                    for d in $($(kubectl) get deployments -n $(k8sNamespace) -o name); do
+                      echo "Attente de $d ..."
+                      $(kubectl) rollout status "$d" -n $(k8sNamespace) --timeout=180s
+                    done
+                    $(kubectl) get pods,svc,ingress -n $(k8sNamespace)
+                  displayName: 'Vérification du déploiement'
