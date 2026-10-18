@@ -39,7 +39,8 @@ variables:
   imagePullSecret: 'acr-secret'
   imageTag: '$(Build.BuildId)'
   nodeVersion: '20.x'
-  vmImage: 'ubuntu-latest'
+  # Tous les jobs tournent sur l'agent self-hosted (pas de parallélisme Microsoft-hosted gratuit).
+  # Pour revenir aux agents Microsoft : remettre « vmImage: 'ubuntu-latest' » dans les jobs CI et Images.
   selfHostedPool: 'Default'
   # Chemin complet : le service de l'agent n'a pas forcément /snap/bin dans son PATH
   kubectl: '/snap/bin/microk8s kubectl'
@@ -52,7 +53,7 @@ stages:
       - job: Backend
         displayName: 'Backend (Node.js)'
         pool:
-          vmImage: $(vmImage)
+          name: $(selfHostedPool)
         steps:
           - task: NodeTool@0
             inputs:
@@ -84,7 +85,7 @@ stages:
       - job: Frontend
         displayName: 'Frontend (Angular)'
         pool:
-          vmImage: $(vmImage)
+          name: $(selfHostedPool)
         steps:
           - task: NodeTool@0
             inputs:
@@ -108,7 +109,7 @@ stages:
       - job: BuildPush
         displayName: 'Construction et envoi vers ACR'
         pool:
-          vmImage: $(vmImage)
+          name: $(selfHostedPool)
         steps:
           - task: Docker@2
             displayName: 'Image backend'
