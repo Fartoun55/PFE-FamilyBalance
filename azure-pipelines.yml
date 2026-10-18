@@ -2,6 +2,7 @@
 #   1. CI     : installation, vérification du backend, build Angular de production
 #   2. Images : construction des images backend / frontend et envoi vers le registre
 #               local de MicroK8s (localhost:32000)
+#               puis publication d'une copie sur Docker Hub (ibrahimfr/...)
 #   3. Deploy : déploiement des manifestes k8s/ sur le cluster MicroK8s local
 #
 # Tous les jobs tournent sur l'agent self-hosted « ibrahim-virtual-machine » (pool Default) :
@@ -21,6 +22,13 @@
 #
 # À configurer dans Azure DevOps :
 #   - Environnement « familybalance-production » (Pipelines > Environments)
+#   - Variable secrète du pipeline (Pipelines > Edit > Variables) :
+#       DOCKERHUB_TOKEN : token Docker Hub avec la permission « Read & Write »
+#                         (cocher « Keep this value secret »)
+#
+# Docker Hub n'est qu'une copie de publication : le cluster utilise le registre local.
+# Si Docker Hub est injoignable depuis la VM, l'étape échoue en avertissement
+# (continueOnError) sans bloquer le déploiement.
 
 trigger:
   branches:
@@ -37,6 +45,8 @@ variables:
   containerRegistry: 'localhost:32000'
   backendRepository: 'familybalance-backend'
   frontendRepository: 'familybalance-frontend'
+  # Compte Docker Hub où les images sont publiées (ibrahimfr/familybalance-...)
+  dockerHubNamespace: 'ibrahimfr'
   k8sNamespace: 'familybalance'
   imageTag: '$(Build.BuildId)'
   nodeVersion: '20.x'
@@ -144,6 +154,28 @@ stages:
               docker push $(containerRegistry)/$(frontendRepository):$(imageTag)
               docker push $(containerRegistry)/$(frontendRepository):latest
             displayName: 'Image frontend'
+
+          # Publication des mêmes images sur Docker Hub (numéro du build + latest).
+          #  - DOCKER_CONFIG temporaire : les identifiants ne restent pas sur l'agent
+          #  - --password-stdin : le token n'apparaît ni dans les logs ni dans « ps »
+          #  - continueOnError : un problème Docker Hub ne bloque pas le déploiement
+          - script: |
+              set -e
+              export DOCKER_CONFIG="$(Agent.TempDirectory)/dockerhub-config"
+              mkdir -p "$DOCKER_CONFIG"
+              echo "$DOCKERHUB_TOKEN" | docker login -u $(dockerHubNamespace) --password-stdin
+              for repo in $(backendRepository) $(frontendRepository); do
+                for tag in $(imageTag) latest; do
+                  docker tag $(containerRegistry)/$repo:$tag $(dockerHubNamespace)/$repo:$tag
+                  docker push $(dockerHubNamespace)/$repo:$tag
+                done
+              done
+              docker logout
+              rm -rf "$DOCKER_CONFIG"
+            displayName: 'Publication sur Docker Hub'
+            continueOnError: true
+            env:
+              DOCKERHUB_TOKEN: $(DOCKERHUB_TOKEN)
 
           - publish: k8s
             artifact: manifests
