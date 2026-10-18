@@ -57,7 +57,7 @@ stages:
       - job: Backend
         displayName: 'Backend (Node.js)'
         pool:
-          name: Default
+          name: $(selfHostedPool)
         steps:
           - task: NodeTool@0
             inputs:
@@ -88,6 +88,9 @@ stages:
 
       - job: Frontend
         displayName: 'Frontend (Angular)'
+        # Ordre imposé : le frontend démarre seulement après la réussite du backend.
+        # Sans dependsOn, les deux jobs sont indépendants et l'ordre est aléatoire.
+        dependsOn: Backend
         pool:
           name: $(selfHostedPool)
         steps:
