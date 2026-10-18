@@ -159,8 +159,17 @@ stages:
           #  - DOCKER_CONFIG temporaire : les identifiants ne restent pas sur l'agent
           #  - --password-stdin : le token n'apparaît ni dans les logs ni dans « ps »
           #  - continueOnError : un problème Docker Hub ne bloque pas le déploiement
+          #  - le token n'est JAMAIS écrit dans ce fichier (dépôt public) : il vient
+          #    de la variable secrète DOCKERHUB_TOKEN définie dans Azure DevOps
           - script: |
               set -e
+              # Contrôle : un token Docker Hub commence par « dckr_ ». Si la variable
+              # secrète n'est pas définie, Azure transmet un texte vide ou non remplacé.
+              case "$DOCKERHUB_TOKEN" in
+                dckr_*) echo "Token Docker Hub présent" ;;
+                *) echo "##[error]Variable secrète DOCKERHUB_TOKEN absente ou invalide (Pipelines > Edit > Variables)"
+                   exit 1 ;;
+              esac
               export DOCKER_CONFIG="$(Agent.TempDirectory)/dockerhub-config"
               mkdir -p "$DOCKER_CONFIG"
               echo "$DOCKERHUB_TOKEN" | docker login -u $(dockerHubNamespace) --password-stdin
