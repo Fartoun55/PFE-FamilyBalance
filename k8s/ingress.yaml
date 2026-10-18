@@ -28,10 +28,10 @@ spec:
   ingressClassName: public
   tls:
     - hosts:
-        - familybalance.example.com
+        - familybalance-app.com
       secretName: familybalance-tls
   rules:
-    - host: familybalance.example.com
+    - host: familybalance-app.com
       http:
         paths:
           # Tout passe par le frontend : son nginx sert Angular et relaie /api,
