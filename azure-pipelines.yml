@@ -53,7 +53,7 @@ stages:
       - job: Backend
         displayName: 'Backend (Node.js)'
         pool:
-          name: $(selfHostedPool)
+          name: Default
         steps:
           - task: NodeTool@0
             inputs:
