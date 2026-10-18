@@ -86,7 +86,7 @@ spec:
       spec:
         accessModes:
           - ReadWriteOnce
-        storageClassName: managed-csi
+        storageClassName: microk8s-hostpath
         resources:
           requests:
             storage: 10Gi
