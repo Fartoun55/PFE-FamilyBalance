@@ -23,7 +23,7 @@ data:
   NODE_ENV: "production"
   PORT: "3000"
   # Origine publique du site (CORS + Socket.IO) : même domaine que dans ingress.yaml.
-  CLIENT_ORIGIN: "https://familybalance-app.com"
+  CLIENT_ORIGIN: "https://familybalance-app.com,http://familybalance-app.com"
   # Proxys de confiance devant l'API : contrôleur Ingress puis nginx du frontend.
   TRUST_PROXY: "2"
   JWT_ACCESS_EXPIRES_IN: "15m"

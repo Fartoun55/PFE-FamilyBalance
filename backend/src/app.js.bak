@@ -1,0 +1,93 @@
+from pathlib import Path
+
+content = """const path = require('path');
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
+
+const authRoutes = require('./routes/authRoutes');
+const adminRoutes = require('./routes/adminRoutes');
+const surveyRoutes = require('./routes/surveyRoutes');
+const scoringRoutes = require('./routes/scoringRoutes');
+const familyDashboardRoutes = require('./routes/familyDashboardRoutes');
+const adolescentDashboardRoutes = require('./routes/adolescentDashboardRoutes');
+const educationRoutes = require('./routes/educationRoutes');
+const teleconsultationRoutes = require('./routes/teleconsultationRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const { notFound, errorHandler } = require('./middleware/errorMiddleware');
+const { corsOrigin } = require('./config/cors');
+
+const app = express();
+
+// Derrière un proxy (nginx du frontend en production), l'adresse du client arrive dans
+// X-Forwarded-For : sans cette option, le limiteur de débit verrait tous les utilisateurs
+// sous l'IP du proxy. TRUST_PROXY = nombre de proxys de confiance (ex. 1).
+if (process.env.TRUST_PROXY) {
+  const hops = Number(process.env.TRUST_PROXY);
+  app.set('trust proxy', Number.isNaN(hops) ? process.env.TRUST_PROXY : hops);
+}
+
+app.use(helmet());
+app.use(
+  cors({
+    origin: corsOrigin,
+    credentials: true,
+  })
+);
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+// Exclure la route de santé du limiteur afin que les sondes Kubernetes
+// ne soient pas bloquées par une réponse HTTP 429.
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.path === '/health',
+  })
+);
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'familybalance-backend' });
+});
+
+// Fichiers uploadés par l'administrateur pour les ressources éducatives (images, PDF).
+// Le frontend Angular (localhost:4200) est une origine différente du backend : helmet
+// impose par défaut Cross-Origin-Resource-Policy: same-origin, ce qui bloquerait le
+// chargement de ces fichiers depuis <img>/<a> côté client. On relâche cette policy
+// uniquement sur cette route statique de lecture seule, sans affaiblir le reste de l'API.
+app.use(
+  '/uploads',
+  (req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  },
+  express.static(path.join(__dirname, '..', 'uploads'))
+);
+
+app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/surveys', surveyRoutes);
+app.use('/api/scoring', scoringRoutes);
+app.use('/api/family-dashboard', familyDashboardRoutes);
+app.use('/api/adolescent-dashboard', adolescentDashboardRoutes);
+app.use('/api/education', educationRoutes);
+app.use('/api/teleconsultation', teleconsultationRoutes);
+app.use('/api/notifications', notificationRoutes);
+
+app.use(notFound);
+app.use(errorHandler);
+
+module.exports = app;
+"""
+
+output_path = Path("/mnt/data/app.js")
+output_path.write_text(content, encoding="utf-8")
+print(f"Fichier modifié créé : {output_path}")
+
