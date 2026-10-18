@@ -22,9 +22,8 @@
 #
 # À configurer dans Azure DevOps :
 #   - Environnement « familybalance-production » (Pipelines > Environments)
-#   - Variable secrète du pipeline (Pipelines > Edit > Variables) :
-#       DOCKERHUB_TOKEN : token Docker Hub avec la permission « Read & Write »
-#                         (cocher « Keep this value secret »)
+#   - Service connection « dockerhub » (type Docker Registry > Docker Hub) :
+#       Docker ID = ibrahimfr, mot de passe = token Docker Hub « Read & Write »
 #
 # Docker Hub n'est qu'une copie de publication : le cluster utilise le registre local.
 # Si Docker Hub est injoignable depuis la VM, l'étape échoue en avertissement
@@ -47,6 +46,8 @@ variables:
   frontendRepository: 'familybalance-frontend'
   # Compte Docker Hub où les images sont publiées (ibrahimfr/familybalance-...)
   dockerHubNamespace: 'ibrahimfr'
+  # Service connection Azure DevOps qui contient les identifiants Docker Hub
+  dockerHubServiceConnection: 'dockerhub'
   k8sNamespace: 'familybalance'
   imageTag: '$(Build.BuildId)'
   nodeVersion: '20.x'
@@ -156,35 +157,37 @@ stages:
             displayName: 'Image frontend'
 
           # Publication des mêmes images sur Docker Hub (numéro du build + latest).
-          #  - DOCKER_CONFIG temporaire : les identifiants ne restent pas sur l'agent
-          #  - --password-stdin : le token n'apparaît ni dans les logs ni dans « ps »
-          #  - continueOnError : un problème Docker Hub ne bloque pas le déploiement
-          #  - le token n'est JAMAIS écrit dans ce fichier (dépôt public) : il vient
-          #    de la variable secrète DOCKERHUB_TOKEN définie dans Azure DevOps
+          #  - Les identifiants viennent de la service connection « dockerhub » :
+          #    aucun token dans ce fichier (dépôt public) ni dans les logs.
+          #  - La tâche Docker@2 « login » prépare une configuration Docker temporaire
+          #    (DOCKER_CONFIG) utilisée par les étapes suivantes du job.
+          #  - continueOnError : un problème Docker Hub ne bloque pas le déploiement.
+          - task: Docker@2
+            displayName: 'Connexion à Docker Hub'
+            continueOnError: true
+            inputs:
+              command: login
+              containerRegistry: $(dockerHubServiceConnection)
+
           - script: |
               set -e
-              # Contrôle : un token Docker Hub commence par « dckr_ ». Si la variable
-              # secrète n'est pas définie, Azure transmet un texte vide ou non remplacé.
-              case "$DOCKERHUB_TOKEN" in
-                dckr_*) echo "Token Docker Hub présent" ;;
-                *) echo "##[error]Variable secrète DOCKERHUB_TOKEN absente ou invalide (Pipelines > Edit > Variables)"
-                   exit 1 ;;
-              esac
-              export DOCKER_CONFIG="$(Agent.TempDirectory)/dockerhub-config"
-              mkdir -p "$DOCKER_CONFIG"
-              echo "$DOCKERHUB_TOKEN" | docker login -u $(dockerHubNamespace) --password-stdin
               for repo in $(backendRepository) $(frontendRepository); do
                 for tag in $(imageTag) latest; do
                   docker tag $(containerRegistry)/$repo:$tag $(dockerHubNamespace)/$repo:$tag
                   docker push $(dockerHubNamespace)/$repo:$tag
                 done
               done
-              docker logout
-              rm -rf "$DOCKER_CONFIG"
             displayName: 'Publication sur Docker Hub'
             continueOnError: true
-            env:
-              DOCKERHUB_TOKEN: $(DOCKERHUB_TOKEN)
+
+          # Déconnexion systématique, même si la publication a échoué.
+          - task: Docker@2
+            displayName: 'Déconnexion de Docker Hub'
+            condition: always()
+            continueOnError: true
+            inputs:
+              command: logout
+              containerRegistry: $(dockerHubServiceConnection)
 
           - publish: k8s
             artifact: manifests
