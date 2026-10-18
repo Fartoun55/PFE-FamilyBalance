@@ -11,6 +11,8 @@
 #
 # À configurer une fois dans Azure DevOps :
 #   - Service connection « Docker Registry » vers l'ACR  -> variable dockerRegistryServiceConnection
+#   - Service connection « Docker Registry » de type Docker Hub (compte ibrahimfr)
+#                                                         -> variable dockerHubServiceConnection
 #   - Variables secrètes du pipeline (Pipelines > Edit > Variables) :
 #       ACR_USERNAME  : utilisateur admin de l'ACR (Portail Azure > ACR > Access keys)
 #       ACR_PASSWORD  : mot de passe admin de l'ACR (cocher « Keep this value secret »)
@@ -32,6 +34,8 @@ pr:
 
 variables:
   dockerRegistryServiceConnection: 'familybalance-acr'
+  # Connexion Docker Hub : téléchargement authentifié des images de base (node, nginx)
+  dockerHubServiceConnection: 'dockerhub'
   containerRegistry: 'familybalanceacr.azurecr.io'
   backendRepository: 'familybalance-backend'
   frontendRepository: 'familybalance-frontend'
@@ -111,6 +115,14 @@ stages:
         pool:
           name: $(selfHostedPool)
         steps:
+          # Connexion à Docker Hub pour télécharger les images de base (node, nginx)
+          # de façon authentifiée, au lieu d'un accès anonyme.
+          - task: Docker@2
+            displayName: 'Login Docker Hub'
+            inputs:
+              command: login
+              containerRegistry: $(dockerHubServiceConnection)
+
           - task: Docker@2
             displayName: 'Image backend'
             inputs:
