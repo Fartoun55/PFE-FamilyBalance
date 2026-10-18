@@ -1,26 +1,26 @@
 # Pipeline Azure DevOps de FamilyBalance
 #   1. CI     : installation, vérification du backend, build Angular de production
-#   2. Images : construction et envoi des images backend / frontend vers Azure Container Registry
-#   3. Deploy : déploiement des manifestes k8s/ sur le cluster MicroK8s local,
-#               via l'agent self-hosted « ibrahim-virtual-machine » (pool Default)
+#   2. Images : construction des images backend / frontend et envoi vers le registre
+#               local de MicroK8s (localhost:32000)
+#   3. Deploy : déploiement des manifestes k8s/ sur le cluster MicroK8s local
 #
-# Pourquoi un agent self-hosted ?
-#   Le cluster MicroK8s est sur une IP privée (192.168.x.x) : Azure DevOps (cloud) refuse
-#   une service connection Kubernetes vers ce type d'adresse. L'agent installé sur la VM
-#   exécute donc kubectl localement, sans service connection Kubernetes.
+# Tous les jobs tournent sur l'agent self-hosted « ibrahim-virtual-machine » (pool Default) :
+#   - le cluster MicroK8s est sur une IP privée (192.168.x.x) : Azure DevOps (cloud) refuse
+#     une service connection Kubernetes vers ce type d'adresse ;
+#   - l'organisation n'a pas de parallélisme Microsoft-hosted gratuit.
 #
-# À configurer une fois dans Azure DevOps :
-#   - Service connection « Docker Registry » vers l'ACR  -> variable dockerRegistryServiceConnection
-#   - Service connection « Docker Registry » de type Docker Hub (compte ibrahimfr)
-#                                                         -> variable dockerHubServiceConnection
-#   - Variables secrètes du pipeline (Pipelines > Edit > Variables) :
-#       ACR_USERNAME  : utilisateur admin de l'ACR (Portail Azure > ACR > Access keys)
-#       ACR_PASSWORD  : mot de passe admin de l'ACR (cocher « Keep this value secret »)
+# Pourquoi le registre local de MicroK8s (et pas Azure Container Registry) ?
+#   Les images sont construites ET exécutées sur la même VM : un registre local évite
+#   un service cloud payant, les identifiants ACR et le secret de pull Kubernetes.
+#   MicroK8s fait confiance à localhost:32000 par défaut (pas de TLS à configurer).
+#
+# Prérequis sur la VM (une seule fois) :
+#   - agent démarré en tant qu'ibrahim, membre des groupes microk8s et docker
+#   - microk8s enable dns ingress registry
+#   - Dockerfiles basés sur mirror.gcr.io/library/... (Docker Hub injoignable depuis la VM)
+#
+# À configurer dans Azure DevOps :
 #   - Environnement « familybalance-production » (Pipelines > Environments)
-#
-# Prérequis sur la VM :
-#   - agent démarré en tant qu'ibrahim, membre du groupe microk8s
-#   - microk8s enable dns ingress
 
 trigger:
   branches:
@@ -33,18 +33,14 @@ pr:
       - main
 
 variables:
-  dockerRegistryServiceConnection: 'familybalance-acr'
-  # Connexion Docker Hub : téléchargement authentifié des images de base (node, nginx)
-  dockerHubServiceConnection: 'dockerhub'
-  containerRegistry: 'familybalanceacr.azurecr.io'
+  # Registre d'images intégré à MicroK8s (addon « registry »)
+  containerRegistry: 'localhost:32000'
   backendRepository: 'familybalance-backend'
   frontendRepository: 'familybalance-frontend'
   k8sNamespace: 'familybalance'
-  imagePullSecret: 'acr-secret'
   imageTag: '$(Build.BuildId)'
   nodeVersion: '20.x'
-  # Tous les jobs tournent sur l'agent self-hosted (pas de parallélisme Microsoft-hosted gratuit).
-  # Pour revenir aux agents Microsoft : remettre « vmImage: 'ubuntu-latest' » dans les jobs CI et Images.
+  # Pool d'agents où est inscrit l'agent self-hosted
   selfHostedPool: 'Default'
   # Chemin complet : le service de l'agent n'a pas forcément /snap/bin dans son PATH
   kubectl: '/snap/bin/microk8s kubectl'
@@ -114,41 +110,40 @@ stages:
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - job: BuildPush
-        displayName: 'Construction et envoi vers ACR'
+        displayName: 'Construction et envoi vers le registre MicroK8s'
         pool:
           name: $(selfHostedPool)
         steps:
-          # Connexion à Docker Hub pour télécharger les images de base (node, nginx)
-          # de façon authentifiée, au lieu d'un accès anonyme.
-          - task: Docker@2
-            displayName: 'Login Docker Hub'
-            inputs:
-              command: login
-              containerRegistry: $(dockerHubServiceConnection)
+          # Vérifie que le registre local répond avant de construire quoi que ce soit.
+          - script: |
+              if ! curl -sf http://$(containerRegistry)/v2/ > /dev/null; then
+                echo "##[error]Registre $(containerRegistry) injoignable. Sur la VM : microk8s enable registry"
+                exit 1
+              fi
+              echo "Registre $(containerRegistry) disponible"
+            displayName: 'Vérification du registre MicroK8s'
 
-          - task: Docker@2
+          # Image backend : deux tags (numéro du build + latest), puis envoi au registre.
+          - script: |
+              set -e
+              docker build \
+                -t $(containerRegistry)/$(backendRepository):$(imageTag) \
+                -t $(containerRegistry)/$(backendRepository):latest \
+                -f backend/Dockerfile backend
+              docker push $(containerRegistry)/$(backendRepository):$(imageTag)
+              docker push $(containerRegistry)/$(backendRepository):latest
             displayName: 'Image backend'
-            inputs:
-              command: buildAndPush
-              containerRegistry: $(dockerRegistryServiceConnection)
-              repository: $(backendRepository)
-              Dockerfile: backend/Dockerfile
-              buildContext: backend
-              tags: |
-                $(imageTag)
-                latest
 
-          - task: Docker@2
+          # Image frontend : même principe.
+          - script: |
+              set -e
+              docker build \
+                -t $(containerRegistry)/$(frontendRepository):$(imageTag) \
+                -t $(containerRegistry)/$(frontendRepository):latest \
+                -f frontend/Dockerfile frontend
+              docker push $(containerRegistry)/$(frontendRepository):$(imageTag)
+              docker push $(containerRegistry)/$(frontendRepository):latest
             displayName: 'Image frontend'
-            inputs:
-              command: buildAndPush
-              containerRegistry: $(dockerRegistryServiceConnection)
-              repository: $(frontendRepository)
-              Dockerfile: frontend/Dockerfile
-              buildContext: frontend
-              tags: |
-                $(imageTag)
-                latest
 
           - publish: k8s
             artifact: manifests
@@ -180,29 +175,14 @@ stages:
                 - script: $(kubectl) apply -f $(Pipeline.Workspace)/manifests/namespace.yaml
                   displayName: 'Namespace'
 
-                # Secret pour que MicroK8s puisse tirer les images depuis l'ACR,
-                # attaché au service account par défaut du namespace.
-                - script: |
-                    set -e
-                    $(kubectl) create secret docker-registry $(imagePullSecret) \
-                      --namespace $(k8sNamespace) \
-                      --docker-server=$(containerRegistry) \
-                      --docker-username="$ACR_USERNAME" \
-                      --docker-password="$ACR_PASSWORD" \
-                      --dry-run=client -o yaml | $(kubectl) apply -f -
-                    $(kubectl) patch serviceaccount default -n $(k8sNamespace) \
-                      -p '{"imagePullSecrets":[{"name":"$(imagePullSecret)"}]}'
-                  displayName: 'Secret de pull ACR'
-                  env:
-                    ACR_USERNAME: $(ACR_USERNAME)
-                    ACR_PASSWORD: $(ACR_PASSWORD)
-
-                # Remplace le tag des images par celui du build (équivalent de « containers: » de KubernetesManifest)
+                # Réécrit la ligne « image: » des manifestes, quel que soit le registre
+                # d'origine (ex. familybalanceacr.azurecr.io/...), vers :
+                #   localhost:32000/familybalance-backend:<numéro du build>
                 - script: |
                     set -e
                     cd $(Pipeline.Workspace)/manifests
-                    sed -i -E "s#(image:[[:space:]]*$(containerRegistry)/$(backendRepository))(:[^[:space:]]*)?#\1:$(imageTag)#" backend.yaml
-                    sed -i -E "s#(image:[[:space:]]*$(containerRegistry)/$(frontendRepository))(:[^[:space:]]*)?#\1:$(imageTag)#" frontend.yaml
+                    sed -i -E "s#(image:[[:space:]]*)[^[:space:]]*$(backendRepository)(:[^[:space:]]*)?#\1$(containerRegistry)/$(backendRepository):$(imageTag)#" backend.yaml
+                    sed -i -E "s#(image:[[:space:]]*)[^[:space:]]*$(frontendRepository)(:[^[:space:]]*)?#\1$(containerRegistry)/$(frontendRepository):$(imageTag)#" frontend.yaml
                     grep -H "image:" backend.yaml frontend.yaml
                   displayName: 'Injection du tag d''image $(imageTag)'
 
