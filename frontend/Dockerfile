@@ -2,7 +2,7 @@
 # Construction : docker build -t familybalance-frontend frontend
 
 # ---------- Étape 1 : build Angular ----------
-FROM node:20-alpine AS build
+FROM mirror.gcr.io/library/node:20-alpine AS build
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ COPY . .
 RUN npm run build -- --configuration production
 
 # ---------- Étape 2 : nginx ----------
-FROM nginx:1.27-alpine
+FROM mirror.gcr.io/library/nginx:1.27-alpine
 
 # Adresse du backend, injectée dans la configuration au démarrage (envsubst de
 # l'image nginx officielle). Par défaut : le Service Kubernetes du backend.
