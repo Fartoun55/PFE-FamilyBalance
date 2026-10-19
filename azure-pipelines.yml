@@ -1,21 +1,10 @@
 # =====================================================================
 # Pipeline Azure DevOps — FamilyBalance (Angular 17 / Node.js / MongoDB)
-# Même structure que projet1 :
 #   1. Build        2. Tests         3. SonarCloud    4. Infra MicroK8s
 #   5. Docker       6. Sécurité      7. Deploy Dev    8. Deploy Prod
 #   9. Monitoring
 #
-# Agent self-hosted « ibrahim-virtual-machine » (pool Default) :
-#   - cluster MicroK8s sur IP privée → pas de service connection Kubernetes cloud
-#   - pas de parallélisme Microsoft-hosted gratuit
-#
-# Variables secrètes à créer dans Pipelines > Library ou dans le pipeline :
-#   - APPLICATIONINSIGHTS_CONNECTION_STRING    (Application Insights)
-# Service connections :
-#   - « dockerhub »        (Docker Registry > Docker Hub)
-#   - « SonarQube Cloud »  (SonarQube Cloud, token géré par la connexion)
-# Environnements     : « familybalance-dev » et « familybalance-prod »
-#                      (ajouter une approbation sur prod)
+# Agent self-hosted : ibrahim-virtual-machine (pool Default)
 # =====================================================================
 
 trigger:
@@ -141,13 +130,12 @@ stages:
       displayName: "🛡 npm audit (critiques)"
       continueOnError: true
 
-    # Couverture réutilisée par SonarCloud
     - publish: backend/coverage
       artifact: backend-coverage
       displayName: "📦 Publish couverture"
 
 # =====================================================
-# 3. SONARCLOUD (via la service connection « SonarQube Cloud »)
+# 3. SONARCLOUD
 # =====================================================
 - stage: SonarCloud
   displayName: "🔍 SonarCloud Analysis"
@@ -157,7 +145,7 @@ stages:
   - job: Sonar
     steps:
     - checkout: self
-      fetchDepth: 0   # historique complet pour l'analyse des nouvelles lignes
+      fetchDepth: 0
 
     - task: NodeTool@0
       inputs:
@@ -189,17 +177,22 @@ stages:
           sonar.tests=backend/tests
           sonar.exclusions=**/node_modules/**,**/dist/**,**/*.spec.ts,**/environments/**
           sonar.javascript.lcov.reportPaths=backend/coverage/lcov.info
+          sonar.scm.revision=$(Build.SourceVersion)
 
     - task: SonarCloudAnalyze@3
       displayName: "🔍 SonarCloud Scan"
 
+    # La publication récupère le Quality Gate après l'analyse.
+    # En cas de HTTP 403, vérifier les permissions, la connexion,
+    # l'organisation et la clé du projet dans SonarQube Cloud.
     - task: SonarCloudPublish@3
       displayName: "📊 Publication Quality Gate"
+      condition: succeeded()
       inputs:
         pollingTimeoutSec: '300'
 
 # =====================================================
-# 4. INFRA MICROK8S (équivalent de l'étape Terraform)
+# 4. INFRA MICROK8S
 # =====================================================
 - stage: Infra
   displayName: "🌍 Infra MicroK8s"
@@ -217,7 +210,6 @@ stages:
         $(kubectl) get nodes -o wide
       displayName: "🔐 Validation du cluster"
 
-    # Idempotent : n'active que ce qui manque
     - script: |
         set -e
         for addon in dns ingress registry metrics-server; do
@@ -304,7 +296,7 @@ stages:
       displayName: "📦 Publish manifestes Kubernetes"
 
 # =====================================================
-# 6. SECURITY SCAN (Trivy en binaire : Docker Hub injoignable depuis la VM)
+# 6. SECURITY SCAN
 # =====================================================
 - stage: Security
   displayName: "🔒 Security Scan"
@@ -358,8 +350,6 @@ stages:
         deploy:
           steps:
 
-          # Copie des manifestes : on retire le namespace codé en dur
-          # et on injecte le tag d'image du build
           - script: |
               set -e
               rm -rf $(Agent.TempDirectory)/k8s-dev
@@ -386,7 +376,6 @@ stages:
               $(kubectl) wait --for=condition=ready pod -l app=mongodb -n $(devNamespace) --timeout=180s
             displayName: "🗄 Deploy MongoDB"
 
-          # Pas d'Ingress en dev : il entrerait en conflit avec celui de prod (même host)
           - script: |
               set -e
               cd $(Agent.TempDirectory)/k8s-dev
