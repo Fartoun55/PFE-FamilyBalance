@@ -1,33 +1,21 @@
-# Pipeline Azure DevOps de FamilyBalance
-#   1. CI     : installation, vérification du backend, build Angular de production
-#   2. Images : construction des images backend / frontend et envoi vers le registre
-#               local de MicroK8s (localhost:32000)
-#               puis publication d'une copie sur Docker Hub (ibrahimfr/...)
-#   3. Deploy : déploiement des manifestes k8s/ sur le cluster MicroK8s local
+# =====================================================================
+# Pipeline Azure DevOps — FamilyBalance (Angular 17 / Node.js / MongoDB)
+# Même structure que projet1 :
+#   1. Build        2. Tests         3. SonarCloud    4. Infra MicroK8s
+#   5. Docker       6. Sécurité      7. Deploy Dev    8. Deploy Prod
+#   9. Monitoring
 #
-# Tous les jobs tournent sur l'agent self-hosted « ibrahim-virtual-machine » (pool Default) :
-#   - le cluster MicroK8s est sur une IP privée (192.168.x.x) : Azure DevOps (cloud) refuse
-#     une service connection Kubernetes vers ce type d'adresse ;
-#   - l'organisation n'a pas de parallélisme Microsoft-hosted gratuit.
+# Agent self-hosted « ibrahim-virtual-machine » (pool Default) :
+#   - cluster MicroK8s sur IP privée → pas de service connection Kubernetes cloud
+#   - pas de parallélisme Microsoft-hosted gratuit
 #
-# Pourquoi le registre local de MicroK8s (et pas Azure Container Registry) ?
-#   Les images sont construites ET exécutées sur la même VM : un registre local évite
-#   un service cloud payant, les identifiants ACR et le secret de pull Kubernetes.
-#   MicroK8s fait confiance à localhost:32000 par défaut (pas de TLS à configurer).
-#
-# Prérequis sur la VM (une seule fois) :
-#   - agent démarré en tant qu'ibrahim, membre des groupes microk8s et docker
-#   - microk8s enable dns ingress registry
-#   - Dockerfiles basés sur mirror.gcr.io/library/... (Docker Hub injoignable depuis la VM)
-#
-# À configurer dans Azure DevOps :
-#   - Environnement « familybalance-production » (Pipelines > Environments)
-#   - Service connection « dockerhub » (type Docker Registry > Docker Hub) :
-#       Docker ID = ibrahimfr, mot de passe = token Docker Hub « Read & Write »
-#
-# Docker Hub n'est qu'une copie de publication : le cluster utilise le registre local.
-# Si Docker Hub est injoignable depuis la VM, l'étape échoue en avertissement
-# (continueOnError) sans bloquer le déploiement.
+# Variables secrètes à créer dans Pipelines > Library ou dans le pipeline :
+#   - SONAR_TOKEN                              (token SonarCloud)
+#   - APPLICATIONINSIGHTS_CONNECTION_STRING    (Application Insights)
+# Service connection : « dockerhub » (Docker Registry > Docker Hub)
+# Environnements     : « familybalance-dev » et « familybalance-prod »
+#                      (ajouter une approbation sur prod)
+# =====================================================================
 
 trigger:
   branches:
@@ -39,211 +27,479 @@ pr:
     include:
       - main
 
+pool:
+  name: Default
+  demands:
+    - agent.name -equals ibrahim-virtual-machine
+
 variables:
-  # Registre d'images intégré à MicroK8s (addon « registry »)
+  imageTag: '$(Build.BuildId)'
   containerRegistry: 'localhost:32000'
   backendRepository: 'familybalance-backend'
   frontendRepository: 'familybalance-frontend'
-  # Compte Docker Hub où les images sont publiées (ibrahimfr/familybalance-...)
   dockerHubNamespace: 'ibrahimfr'
-  # Service connection Azure DevOps qui contient les identifiants Docker Hub
   dockerHubServiceConnection: 'dockerhub'
-  k8sNamespace: 'familybalance'
-  imageTag: '$(Build.BuildId)'
   nodeVersion: '20.x'
-  # Pool d'agents où est inscrit l'agent self-hosted
-  selfHostedPool: 'Default'
-  # Chemin complet : le service de l'agent n'a pas forcément /snap/bin dans son PATH
+
+  devNamespace: 'familybalance-dev'
+  prodNamespace: 'familybalance'
+
+  sonarOrganization: 'ibrahimfartoun'
+  sonarProjectKey: 'familybalance'
+
+  microk8s: '/snap/bin/microk8s'
   kubectl: '/snap/bin/microk8s kubectl'
 
-stages:
-  # ------------------------------------------------------------------ CI
-  - stage: CI
-    displayName: 'Vérification et build'
-    jobs:
-      - job: Backend
-        displayName: 'Backend (Node.js)'
-        pool:
-          name: $(selfHostedPool)
-        steps:
-          - task: NodeTool@0
-            inputs:
-              versionSpec: $(nodeVersion)
-            displayName: 'Node.js $(nodeVersion)'
+  isMain: $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]
 
-          - script: npm ci
-            workingDirectory: backend
-            displayName: 'npm ci'
+stages:
+
+# =====================================================
+# 1. BUILD
+# =====================================================
+- stage: Build
+  displayName: "🏗 Build"
+
+  jobs:
+  - job: Backend
+    displayName: "🟢 Backend Node.js"
+    steps:
+    - checkout: self
+
+    - task: NodeTool@0
+      displayName: "⚙ Node.js $(nodeVersion)"
+      inputs:
+        versionSpec: $(nodeVersion)
+
+    - script: npm ci
+      workingDirectory: backend
+      displayName: "📥 npm ci"
+
+    - script: |
+        set -e
+        find src -name '*.js' -print0 | xargs -0 -n1 node --check
+        node -e "require('./src/app')"
+      workingDirectory: backend
+      displayName: "🔨 Vérification syntaxique + chargement de l'app"
+      env:
+        NODE_ENV: test
+
+  - job: Frontend
+    displayName: "🅰 Frontend Angular"
+    dependsOn: Backend
+    steps:
+    - checkout: self
+
+    - task: NodeTool@0
+      displayName: "⚙ Node.js $(nodeVersion)"
+      inputs:
+        versionSpec: $(nodeVersion)
+
+    - script: npm ci
+      workingDirectory: frontend
+      displayName: "📥 npm ci"
+
+    - script: npm run build -- --configuration production
+      workingDirectory: frontend
+      displayName: "🔨 Build Angular production"
+
+    - task: PublishBuildArtifacts@1
+      displayName: "📦 Publish Angular dist"
+      inputs:
+        PathtoPublish: 'frontend/dist'
+        ArtifactName: 'frontend-dist'
+        publishLocation: 'Container'
+
+# =====================================================
+# 2. TESTS
+# =====================================================
+- stage: Tests
+  displayName: "🧪 Tests"
+  dependsOn: Build
+
+  jobs:
+  - job: UnitTests
+    steps:
+    - checkout: self
+
+    - task: NodeTool@0
+      inputs:
+        versionSpec: $(nodeVersion)
+
+    - script: npm ci
+      workingDirectory: backend
+      displayName: "📥 npm ci"
+
+    - script: npm test -- --ci --coverage --coverageReporters=lcov --coverageReporters=text-summary
+      workingDirectory: backend
+      displayName: "🧪 Tests API (Jest + couverture)"
+
+    - script: npm audit --omit=dev --audit-level=critical
+      workingDirectory: backend
+      displayName: "🛡 npm audit (critiques)"
+      continueOnError: true
+
+    # Couverture réutilisée par SonarCloud
+    - publish: backend/coverage
+      artifact: backend-coverage
+      displayName: "📦 Publish couverture"
+
+# =====================================================
+# 3. SONARCLOUD
+# =====================================================
+- stage: SonarCloud
+  displayName: "🔍 SonarCloud Analysis"
+  dependsOn: Tests
+
+  jobs:
+  - job: Sonar
+    steps:
+    - checkout: self
+      fetchDepth: 0   # historique complet pour l'analyse des nouvelles lignes
+
+    - task: NodeTool@0
+      inputs:
+        versionSpec: $(nodeVersion)
+
+    - download: current
+      artifact: backend-coverage
+      displayName: "📥 Récupération couverture"
+
+    - script: |
+        set -e
+        mkdir -p backend/coverage
+        cp -r $(Pipeline.Workspace)/backend-coverage/* backend/coverage/
+
+        npx --yes sonarqube-scanner \
+          -Dsonar.projectKey=$(sonarProjectKey) \
+          -Dsonar.organization=$(sonarOrganization) \
+          -Dsonar.host.url=https://sonarcloud.io \
+          -Dsonar.token=$SONAR_TOKEN \
+          -Dsonar.sources=backend/src,frontend/src \
+          -Dsonar.tests=backend/tests \
+          -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/*.spec.ts,**/environments/**" \
+          -Dsonar.javascript.lcov.reportPaths=backend/coverage/lcov.info
+      displayName: "🔍 SonarCloud Scan"
+      env:
+        SONAR_TOKEN: $(SONAR_TOKEN)
+
+# =====================================================
+# 4. INFRA MICROK8S (équivalent de l'étape Terraform)
+# =====================================================
+- stage: Infra
+  displayName: "🌍 Infra MicroK8s"
+  dependsOn: SonarCloud
+  condition: and(succeeded(), eq(variables.isMain, true))
+
+  jobs:
+  - job: ClusterSetup
+    steps:
+    - checkout: none
+
+    - script: |
+        set -e
+        $(microk8s) status --wait-ready --timeout 120
+        $(kubectl) get nodes -o wide
+      displayName: "🔐 Validation du cluster"
+
+    # Idempotent : n'active que ce qui manque
+    - script: |
+        set -e
+        for addon in dns ingress registry metrics-server; do
+          if $(microk8s) status --addon $addon | grep -q enabled; then
+            echo "✔ $addon déjà activé"
+          else
+            echo "➕ Activation de $addon"
+            $(microk8s) enable $addon
+          fi
+        done
+      displayName: "⚙ Addons MicroK8s (dns, ingress, registry, metrics-server)"
+
+    - script: |
+        set -e
+        for ns in $(devNamespace) $(prodNamespace); do
+          $(kubectl) create namespace $ns --dry-run=client -o yaml | $(kubectl) apply -f -
+        done
+        $(kubectl) get ns
+      displayName: "📁 Namespaces dev + prod"
+
+# =====================================================
+# 5. DOCKER BUILD + PUSH
+# =====================================================
+- stage: Docker
+  displayName: "🐳 Docker Build & Push"
+  dependsOn: Infra
+
+  jobs:
+  - job: DockerBuildPush
+    steps:
+    - checkout: self
+
+    - script: |
+        curl -sf http://$(containerRegistry)/v2/ > /dev/null || {
+          echo "##[error]Registre $(containerRegistry) injoignable (microk8s enable registry)"
+          exit 1
+        }
+        echo "✅ Registre disponible"
+      displayName: "🔐 Vérification registre MicroK8s"
+
+    - script: |
+        set -e
+        for app in backend frontend; do
+          repo=familybalance-$app
+          docker build \
+            -f $app/Dockerfile \
+            -t $(containerRegistry)/$repo:$(imageTag) \
+            -t $(containerRegistry)/$repo:latest \
+            $app
+          docker push $(containerRegistry)/$repo:$(imageTag)
+          docker push $(containerRegistry)/$repo:latest
+        done
+        echo "✅ Docker Push Success"
+      displayName: "🐳 Build & Push (registre local)"
+
+    - task: Docker@2
+      displayName: "🔐 Login Docker Hub"
+      continueOnError: true
+      inputs:
+        command: login
+        containerRegistry: $(dockerHubServiceConnection)
+
+    - script: |
+        set -e
+        for repo in $(backendRepository) $(frontendRepository); do
+          for tag in $(imageTag) latest; do
+            docker tag $(containerRegistry)/$repo:$tag $(dockerHubNamespace)/$repo:$tag
+            docker push $(dockerHubNamespace)/$repo:$tag
+          done
+        done
+      displayName: "📤 Publication Docker Hub"
+      continueOnError: true
+
+    - task: Docker@2
+      displayName: "🔓 Logout Docker Hub"
+      condition: always()
+      continueOnError: true
+      inputs:
+        command: logout
+        containerRegistry: $(dockerHubServiceConnection)
+
+    - publish: k8s
+      artifact: manifests
+      displayName: "📦 Publish manifestes Kubernetes"
+
+# =====================================================
+# 6. SECURITY SCAN (Trivy en binaire : Docker Hub injoignable depuis la VM)
+# =====================================================
+- stage: Security
+  displayName: "🔒 Security Scan"
+  dependsOn: Docker
+
+  jobs:
+  - job: TrivyScan
+    steps:
+    - checkout: none
+
+    - script: |
+        set -e
+        export PATH="$HOME/.local/bin:$PATH"
+        if ! command -v trivy &> /dev/null; then
+          mkdir -p $HOME/.local/bin
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b $HOME/.local/bin
+        fi
+        trivy --version
+      displayName: "⚙ Install Trivy"
+
+    - script: |
+        set -e
+        export PATH="$HOME/.local/bin:$PATH"
+        for repo in $(backendRepository) $(frontendRepository); do
+          echo "=== 🔍 $repo:$(imageTag) ==="
+          trivy image \
+            --cache-dir /tmp/trivy-cache \
+            --timeout 30m \
+            --exit-code 0 \
+            --ignore-unfixed \
+            --severity HIGH,CRITICAL \
+            --format table \
+            $(containerRegistry)/$repo:$(imageTag)
+        done
+        echo "✅ Trivy Scan terminé"
+      displayName: "🔍 Trivy Security Scan"
+
+# =====================================================
+# 7. DEPLOY DEV
+# =====================================================
+- stage: Deploy_Dev
+  displayName: "🚀 Deploy Dev"
+  dependsOn: Security
+
+  jobs:
+  - deployment: DevDeploy
+    environment: familybalance-dev
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          # Copie des manifestes : on retire le namespace codé en dur
+          # et on injecte le tag d'image du build
+          - script: |
+              set -e
+              rm -rf $(Agent.TempDirectory)/k8s-dev
+              cp -r $(Pipeline.Workspace)/manifests $(Agent.TempDirectory)/k8s-dev
+              cd $(Agent.TempDirectory)/k8s-dev
+              sed -i -E '/^[[:space:]]+namespace:[[:space:]]/d' *.yaml
+              sed -i -E "s#(image:[[:space:]]*)[^[:space:]]*$(backendRepository)(:[^[:space:]]*)?#\1$(containerRegistry)/$(backendRepository):$(imageTag)#" backend.yaml
+              sed -i -E "s#(image:[[:space:]]*)[^[:space:]]*$(frontendRepository)(:[^[:space:]]*)?#\1$(containerRegistry)/$(frontendRepository):$(imageTag)#" frontend.yaml
+              grep -H "image:" backend.yaml frontend.yaml
+            displayName: "🔧 Préparation manifestes (tag $(imageTag))"
+
+          - script: |
+              $(kubectl) create secret generic appinsights-secret \
+                --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$(APPLICATIONINSIGHTS_CONNECTION_STRING)" \
+                -n $(devNamespace) \
+                --dry-run=client -o yaml | $(kubectl) apply -f -
+            displayName: "🔐 Create AppInsights Secret"
 
           - script: |
               set -e
-              find src -name '*.js' -print0 | xargs -0 -n1 node --check
-              node -e "require('./src/app')"
-            workingDirectory: backend
-            displayName: 'Vérification syntaxique et chargement de l''application'
-            env:
-              NODE_ENV: test
+              $(kubectl) apply -n $(devNamespace) -f $(Agent.TempDirectory)/k8s-dev/mongodb.yaml
+              $(kubectl) rollout status deployment -n $(devNamespace) \
+                -l app=mongodb --timeout=180s || \
+              $(kubectl) wait --for=condition=ready pod -l app=mongodb -n $(devNamespace) --timeout=180s
+            displayName: "🗄 Deploy MongoDB"
 
-          - script: npm test -- --ci
-            workingDirectory: backend
-            displayName: 'Tests de l''API (Jest)'
-
-          - script: npm audit --omit=dev --audit-level=critical
-            workingDirectory: backend
-            displayName: 'Audit des dépendances (vulnérabilités critiques)'
-            continueOnError: true
-
-      - job: Frontend
-        displayName: 'Frontend (Angular)'
-        # Ordre imposé : le frontend démarre seulement après la réussite du backend.
-        # Sans dependsOn, les deux jobs sont indépendants et l'ordre est aléatoire.
-        dependsOn: Backend
-        pool:
-          name: $(selfHostedPool)
-        steps:
-          - task: NodeTool@0
-            inputs:
-              versionSpec: $(nodeVersion)
-            displayName: 'Node.js $(nodeVersion)'
-
-          - script: npm ci
-            workingDirectory: frontend
-            displayName: 'npm ci'
-
-          - script: npm run build -- --configuration production
-            workingDirectory: frontend
-            displayName: 'Build Angular de production'
-
-  # ------------------------------------------------------------------ Images
-  - stage: Images
-    displayName: 'Images Docker'
-    dependsOn: CI
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-    jobs:
-      - job: BuildPush
-        displayName: 'Construction et envoi vers le registre MicroK8s'
-        pool:
-          name: $(selfHostedPool)
-        steps:
-          # Vérifie que le registre local répond avant de construire quoi que ce soit.
+          # Pas d'Ingress en dev : il entrerait en conflit avec celui de prod (même host)
           - script: |
-              if ! curl -sf http://$(containerRegistry)/v2/ > /dev/null; then
-                echo "##[error]Registre $(containerRegistry) injoignable. Sur la VM : microk8s enable registry"
+              set -e
+              cd $(Agent.TempDirectory)/k8s-dev
+              $(kubectl) apply -n $(devNamespace) -f backend.yaml
+              $(kubectl) apply -n $(devNamespace) -f frontend.yaml
+            displayName: "🚀 Deploy Backend + Frontend"
+
+          - script: |
+              echo "⏳ Attente du rollout..."
+              failed=0
+              for d in $($(kubectl) get deployments -n $(devNamespace) -o name); do
+                $(kubectl) rollout status "$d" -n $(devNamespace) --timeout=180s || { failed=1; bad="$d"; break; }
+              done
+
+              if [ $failed -eq 1 ]; then
+                echo ""
+                echo "❌ Rollout échoué ($bad) — Diagnostic en cours..."
+                echo "=== 📋 État des pods ==="
+                $(kubectl) get pods -n $(devNamespace) -o wide
+                echo "=== 🔍 Événements récents ==="
+                $(kubectl) get events -n $(devNamespace) --sort-by=.lastTimestamp | tail -30
+                echo "=== 📜 Logs ==="
+                $(kubectl) logs -n $(devNamespace) "$bad" --tail=100 --previous 2>/dev/null || \
+                $(kubectl) logs -n $(devNamespace) "$bad" --tail=100 2>/dev/null || \
+                echo "⚠️ Aucun log"
+                echo "=== 🔄 Rollback ==="
+                $(kubectl) rollout undo "$bad" -n $(devNamespace) || true
                 exit 1
               fi
-              echo "Registre $(containerRegistry) disponible"
-            displayName: 'Vérification du registre MicroK8s'
 
-          # Image backend : deux tags (numéro du build + latest), puis envoi au registre.
-          - script: |
-              set -e
-              docker build \
-                -t $(containerRegistry)/$(backendRepository):$(imageTag) \
-                -t $(containerRegistry)/$(backendRepository):latest \
-                -f backend/Dockerfile backend
-              docker push $(containerRegistry)/$(backendRepository):$(imageTag)
-              docker push $(containerRegistry)/$(backendRepository):latest
-            displayName: 'Image backend'
+              echo "✅ Déploiement Dev réussi"
+              $(kubectl) get pods,svc -n $(devNamespace)
+            displayName: "✅ Validate Rollout + Diagnostics"
 
-          # Image frontend : même principe.
-          - script: |
-              set -e
-              docker build \
-                -t $(containerRegistry)/$(frontendRepository):$(imageTag) \
-                -t $(containerRegistry)/$(frontendRepository):latest \
-                -f frontend/Dockerfile frontend
-              docker push $(containerRegistry)/$(frontendRepository):$(imageTag)
-              docker push $(containerRegistry)/$(frontendRepository):latest
-            displayName: 'Image frontend'
+# =====================================================
+# 8. DEPLOY PROD
+# =====================================================
+- stage: Deploy_Prod
+  displayName: "🚀 Deploy Prod"
+  dependsOn: Deploy_Dev
 
-          # Publication des mêmes images sur Docker Hub (numéro du build + latest).
-          #  - Les identifiants viennent de la service connection « dockerhub » :
-          #    aucun token dans ce fichier (dépôt public) ni dans les logs.
-          #  - La tâche Docker@2 « login » prépare une configuration Docker temporaire
-          #    (DOCKER_CONFIG) utilisée par les étapes suivantes du job.
-          #  - continueOnError : un problème Docker Hub ne bloque pas le déploiement.
-          - task: Docker@2
-            displayName: 'Connexion à Docker Hub'
-            continueOnError: true
-            inputs:
-              command: login
-              containerRegistry: $(dockerHubServiceConnection)
+  jobs:
+  - deployment: ProdDeploy
+    environment: familybalance-prod
+    strategy:
+      runOnce:
+        deploy:
+          steps:
 
           - script: |
               set -e
-              for repo in $(backendRepository) $(frontendRepository); do
-                for tag in $(imageTag) latest; do
-                  docker tag $(containerRegistry)/$repo:$tag $(dockerHubNamespace)/$repo:$tag
-                  docker push $(dockerHubNamespace)/$repo:$tag
-                done
+              rm -rf $(Agent.TempDirectory)/k8s-prod
+              cp -r $(Pipeline.Workspace)/manifests $(Agent.TempDirectory)/k8s-prod
+              cd $(Agent.TempDirectory)/k8s-prod
+              sed -i -E "s#(image:[[:space:]]*)[^[:space:]]*$(backendRepository)(:[^[:space:]]*)?#\1$(containerRegistry)/$(backendRepository):$(imageTag)#" backend.yaml
+              sed -i -E "s#(image:[[:space:]]*)[^[:space:]]*$(frontendRepository)(:[^[:space:]]*)?#\1$(containerRegistry)/$(frontendRepository):$(imageTag)#" frontend.yaml
+              grep -H "image:" backend.yaml frontend.yaml
+            displayName: "🔧 Préparation manifestes (tag $(imageTag))"
+
+          - script: $(kubectl) apply -f $(Agent.TempDirectory)/k8s-prod/namespace.yaml
+            displayName: "📁 Namespace"
+
+          - script: |
+              $(kubectl) create secret generic appinsights-secret \
+                --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$(APPLICATIONINSIGHTS_CONNECTION_STRING)" \
+                -n $(prodNamespace) \
+                --dry-run=client -o yaml | $(kubectl) apply -f -
+            displayName: "🔐 Create AppInsights Secret"
+
+          - script: |
+              set -e
+              cd $(Agent.TempDirectory)/k8s-prod
+              $(kubectl) apply -n $(prodNamespace) -f mongodb.yaml
+              $(kubectl) apply -n $(prodNamespace) -f backend.yaml
+              $(kubectl) apply -n $(prodNamespace) -f frontend.yaml
+              $(kubectl) apply -n $(prodNamespace) -f ingress.yaml
+            displayName: "🚀 Deploy MongoDB, Backend, Frontend, Ingress"
+
+          - script: |
+              failed=0
+              for d in $($(kubectl) get deployments -n $(prodNamespace) -o name); do
+                echo "⏳ $d"
+                $(kubectl) rollout status "$d" -n $(prodNamespace) --timeout=180s || { failed=1; bad="$d"; break; }
               done
-            displayName: 'Publication sur Docker Hub'
-            continueOnError: true
 
-          # Déconnexion systématique, même si la publication a échoué.
-          - task: Docker@2
-            displayName: 'Déconnexion de Docker Hub'
-            condition: always()
-            continueOnError: true
-            inputs:
-              command: logout
-              containerRegistry: $(dockerHubServiceConnection)
+              if [ $failed -eq 1 ]; then
+                echo "❌ Rollout échoué ($bad)"
+                $(kubectl) get pods -n $(prodNamespace) -o wide
+                $(kubectl) logs -n $(prodNamespace) "$bad" --tail=100 2>/dev/null || true
+                echo "=== 🔄 Rollback ==="
+                $(kubectl) rollout undo "$bad" -n $(prodNamespace) || true
+                exit 1
+              fi
 
-          - publish: k8s
-            artifact: manifests
-            displayName: 'Publication des manifestes Kubernetes'
+              echo "✅ Déploiement Prod réussi"
+              $(kubectl) get pods,svc,ingress -n $(prodNamespace)
+            displayName: "✅ Validate Rollout"
 
-  # ------------------------------------------------------------------ Deploy
-  - stage: Deploy
-    displayName: 'Déploiement MicroK8s'
-    dependsOn: Images
-    condition: succeeded()
-    jobs:
-      - deployment: DeployMicroK8s
-        displayName: 'Déploiement sur MicroK8s (agent self-hosted)'
-        pool:
-          name: $(selfHostedPool)
-        environment: 'familybalance-production'
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                # L'artefact « manifests » est téléchargé automatiquement dans $(Pipeline.Workspace)/manifests
-                - script: |
-                    set -e
-                    $(kubectl) version
-                    $(kubectl) get nodes
-                  displayName: 'Vérification de l''accès au cluster'
+# =====================================================
+# 9. MONITORING
+# =====================================================
+- stage: Monitoring
+  displayName: "📊 Monitoring"
+  dependsOn: Deploy_Prod
 
-                # Le namespace doit exister avant les ressources qu'il contient.
-                - script: $(kubectl) apply -f $(Pipeline.Workspace)/manifests/namespace.yaml
-                  displayName: 'Namespace'
+  jobs:
+  - job: MonitoringCheck
+    steps:
+    - checkout: none
 
-                # Réécrit la ligne « image: » des manifestes, quel que soit le registre
-                # d'origine (ex. familybalanceacr.azurecr.io/...), vers :
-                #   localhost:32000/familybalance-backend:<numéro du build>
-                - script: |
-                    set -e
-                    cd $(Pipeline.Workspace)/manifests
-                    sed -i -E "s#(image:[[:space:]]*)[^[:space:]]*$(backendRepository)(:[^[:space:]]*)?#\1$(containerRegistry)/$(backendRepository):$(imageTag)#" backend.yaml
-                    sed -i -E "s#(image:[[:space:]]*)[^[:space:]]*$(frontendRepository)(:[^[:space:]]*)?#\1$(containerRegistry)/$(frontendRepository):$(imageTag)#" frontend.yaml
-                    grep -H "image:" backend.yaml frontend.yaml
-                  displayName: 'Injection du tag d''image $(imageTag)'
+    - script: |
+        $(kubectl) get pods -A
+        echo ""
+        $(kubectl) top nodes || true
+        echo ""
+        $(kubectl) top pods -n $(prodNamespace) || true
+      displayName: "📈 Kubernetes Monitoring"
 
-                - script: |
-                    set -e
-                    cd $(Pipeline.Workspace)/manifests
-                    $(kubectl) apply -n $(k8sNamespace) -f mongodb.yaml
-                    $(kubectl) apply -n $(k8sNamespace) -f backend.yaml
-                    $(kubectl) apply -n $(k8sNamespace) -f frontend.yaml
-                    $(kubectl) apply -n $(k8sNamespace) -f ingress.yaml
-                  displayName: 'MongoDB, backend, frontend et Ingress'
+    - script: |
+        $(kubectl) get pods -n $(prodNamespace) \
+          -o jsonpath='{range .items[*]}{.metadata.name}{"  restarts="}{.status.containerStatuses[0].restartCount}{"\n"}{end}'
+      displayName: "🔁 Redémarrages des pods"
 
-                - script: |
-                    set -e
-                    for d in $($(kubectl) get deployments -n $(k8sNamespace) -o name); do
-                      echo "Attente de $d ..."
-                      $(kubectl) rollout status "$d" -n $(k8sNamespace) --timeout=180s
-                    done
-                    $(kubectl) get pods,svc,ingress -n $(k8sNamespace)
-                  displayName: 'Vérification du déploiement'
+    - script: |
+        if [ -n "$(APPLICATIONINSIGHTS_CONNECTION_STRING)" ]; then
+          echo "✅ Application Insights configuré (secret appinsights-secret présent)"
+          $(kubectl) get secret appinsights-secret -n $(prodNamespace)
+        else
+          echo "##[warning]APPLICATIONINSIGHTS_CONNECTION_STRING non défini"
+        fi
+      displayName: "📊 Verify App Insights"
