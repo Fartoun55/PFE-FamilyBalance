@@ -10,9 +10,10 @@
 #   - pas de parallélisme Microsoft-hosted gratuit
 #
 # Variables secrètes à créer dans Pipelines > Library ou dans le pipeline :
-#   - SONAR_TOKEN                              (token SonarCloud)
 #   - APPLICATIONINSIGHTS_CONNECTION_STRING    (Application Insights)
-# Service connection : « dockerhub » (Docker Registry > Docker Hub)
+# Service connections :
+#   - « dockerhub »        (Docker Registry > Docker Hub)
+#   - « SonarQube Cloud »  (SonarQube Cloud, token géré par la connexion)
 # Environnements     : « familybalance-dev » et « familybalance-prod »
 #                      (ajouter une approbation sur prod)
 # =====================================================================
@@ -44,6 +45,7 @@ variables:
   devNamespace: 'familybalance-dev'
   prodNamespace: 'familybalance'
 
+  sonarServiceConnection: 'SonarQube Cloud'
   sonarOrganization: 'ibrahimfartoun'
   sonarProjectKey: 'familybalance'
 
@@ -145,7 +147,7 @@ stages:
       displayName: "📦 Publish couverture"
 
 # =====================================================
-# 3. SONARCLOUD
+# 3. SONARCLOUD (via la service connection « SonarQube Cloud »)
 # =====================================================
 - stage: SonarCloud
   displayName: "🔍 SonarCloud Analysis"
@@ -169,19 +171,32 @@ stages:
         set -e
         mkdir -p backend/coverage
         cp -r $(Pipeline.Workspace)/backend-coverage/* backend/coverage/
+        ls -la backend/coverage
+      displayName: "📂 Copie de la couverture"
 
-        npx --yes sonarqube-scanner \
-          -Dsonar.projectKey=$(sonarProjectKey) \
-          -Dsonar.organization=$(sonarOrganization) \
-          -Dsonar.host.url=https://sonarcloud.io \
-          -Dsonar.token=$SONAR_TOKEN \
-          -Dsonar.sources=backend/src,frontend/src \
-          -Dsonar.tests=backend/tests \
-          -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/*.spec.ts,**/environments/**" \
-          -Dsonar.javascript.lcov.reportPaths=backend/coverage/lcov.info
+    - task: SonarCloudPrepare@3
+      displayName: "⚙ Préparation SonarCloud"
+      inputs:
+        SonarCloud: $(sonarServiceConnection)
+        organization: $(sonarOrganization)
+        scannerMode: 'cli'
+        configMode: 'manual'
+        cliProjectKey: $(sonarProjectKey)
+        cliProjectName: 'FamilyBalance'
+        cliSources: '.'
+        extraProperties: |
+          sonar.sources=backend/src,frontend/src
+          sonar.tests=backend/tests
+          sonar.exclusions=**/node_modules/**,**/dist/**,**/*.spec.ts,**/environments/**
+          sonar.javascript.lcov.reportPaths=backend/coverage/lcov.info
+
+    - task: SonarCloudAnalyze@3
       displayName: "🔍 SonarCloud Scan"
-      env:
-        SONAR_TOKEN: $(SONAR_TOKEN)
+
+    - task: SonarCloudPublish@3
+      displayName: "📊 Publication Quality Gate"
+      inputs:
+        pollingTimeoutSec: '300'
 
 # =====================================================
 # 4. INFRA MICROK8S (équivalent de l'étape Terraform)
