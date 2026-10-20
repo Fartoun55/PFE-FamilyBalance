@@ -223,6 +223,7 @@ stages:
           fi
         done
       displayName: "⚙ Addons MicroK8s (dns, ingress, registry, metrics-server)"
+      continueOnError: true
 
     - script: |
         set -e
@@ -298,7 +299,10 @@ stages:
       displayName: "📦 Publish manifestes Kubernetes"
 
 # =====================================================
-# 6. SECURITY SCAN
+# 6. SECURITY SCAN (Trivy)
+#   - cache persistant ~/.cache/trivy (survit aux redémarrages)
+#   - 3 tentatives + miroir de secours pour la base
+#   - repli sur la base en cache si le réseau coupe
 # =====================================================
 - stage: Security
   displayName: "🔒 Security Scan"
@@ -321,11 +325,10 @@ stages:
         trivy --version
       displayName: "⚙ Install Trivy"
 
-    # Cache persistant + 3 tentatives + miroir de secours.
-    # Si la mise à jour échoue mais qu'une DB existe en cache, on continue avec.
     - script: |
         export PATH="$HOME/.local/bin:$PATH"
         CACHE="$HOME/.cache/trivy"
+        mkdir -p "$CACHE"
         for i in 1 2 3; do
           echo "📥 Mise à jour DB Trivy (tentative $i/3)"
           if trivy image --download-db-only --no-progress \
@@ -362,6 +365,7 @@ stages:
         done
         echo "✅ Trivy Scan terminé"
       displayName: "🔍 Trivy Security Scan"
+
 # =====================================================
 # 7. DEPLOY DEV
 # =====================================================
@@ -395,11 +399,21 @@ stages:
                 --dry-run=client -o yaml | $(kubectl) apply -f -
             displayName: "🔐 Create AppInsights Secret"
 
+          # Les secrets applicatifs (MongoDB, JWT…) n'existent qu'en prod :
+          # on les recopie dans le namespace dev avant le déploiement.
+          - script: |
+              set -e
+              for s in mongodb-secret familybalance-secrets familybalance-mongodb-auth; do
+                $(kubectl) get secret $s -n $(prodNamespace) -o yaml \
+                  | sed -E '/^\s*(namespace|resourceVersion|uid|creationTimestamp):/d' \
+                  | $(kubectl) apply -n $(devNamespace) -f -
+              done
+            displayName: "🔐 Copie des secrets prod → dev"
+
           - script: |
               set -e
               $(kubectl) apply -n $(devNamespace) -f $(Agent.TempDirectory)/k8s-dev/mongodb.yaml
-              $(kubectl) rollout status deployment -n $(devNamespace) \
-                -l app=mongodb --timeout=180s || \
+              $(kubectl) rollout status statefulset/mongodb -n $(devNamespace) --timeout=180s || \
               $(kubectl) wait --for=condition=ready pod -l app=mongodb -n $(devNamespace) --timeout=180s
             displayName: "🗄 Deploy MongoDB"
 
@@ -408,6 +422,8 @@ stages:
               cd $(Agent.TempDirectory)/k8s-dev
               $(kubectl) apply -n $(devNamespace) -f backend.yaml
               $(kubectl) apply -n $(devNamespace) -f frontend.yaml
+              # 1 seul frontend en dev pour économiser les ressources de la VM
+              $(kubectl) scale deployment/$(frontendRepository) --replicas=1 -n $(devNamespace)
             displayName: "🚀 Deploy Backend + Frontend"
 
           - script: |
@@ -422,6 +438,8 @@ stages:
                 echo "❌ Rollout échoué ($bad) — Diagnostic en cours..."
                 echo "=== 📋 État des pods ==="
                 $(kubectl) get pods -n $(devNamespace) -o wide
+                echo "=== ⚠️ Erreurs des pods ==="
+                $(kubectl) describe pods -n $(devNamespace) | grep -E "Warning|Error:" | tail -20
                 echo "=== 🔍 Événements récents ==="
                 $(kubectl) get events -n $(devNamespace) --sort-by=.lastTimestamp | tail -30
                 echo "=== 📜 Logs ==="
@@ -491,6 +509,8 @@ stages:
               if [ $failed -eq 1 ]; then
                 echo "❌ Rollout échoué ($bad)"
                 $(kubectl) get pods -n $(prodNamespace) -o wide
+                echo "=== ⚠️ Erreurs des pods ==="
+                $(kubectl) describe pods -n $(prodNamespace) | grep -E "Warning|Error:" | tail -20
                 $(kubectl) logs -n $(prodNamespace) "$bad" --tail=100 2>/dev/null || true
                 echo "=== 🔄 Rollback ==="
                 $(kubectl) rollout undo "$bad" -n $(prodNamespace) || true
