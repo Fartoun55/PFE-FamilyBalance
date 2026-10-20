@@ -306,6 +306,7 @@ stages:
 
   jobs:
   - job: TrivyScan
+    timeoutInMinutes: 60
     steps:
     - checkout: none
 
@@ -320,13 +321,38 @@ stages:
         trivy --version
       displayName: "⚙ Install Trivy"
 
+    # Cache persistant + 3 tentatives + miroir de secours.
+    # Si la mise à jour échoue mais qu'une DB existe en cache, on continue avec.
+    - script: |
+        export PATH="$HOME/.local/bin:$PATH"
+        CACHE="$HOME/.cache/trivy"
+        for i in 1 2 3; do
+          echo "📥 Mise à jour DB Trivy (tentative $i/3)"
+          if trivy image --download-db-only --no-progress \
+               --cache-dir "$CACHE" \
+               --db-repository mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2; then
+            echo "✅ DB à jour"
+            exit 0
+          fi
+          sleep 20
+        done
+        if [ -f "$CACHE/db/trivy.db" ]; then
+          echo "##[warning]Mise à jour impossible — utilisation de la DB en cache"
+          exit 0
+        fi
+        echo "##[error]Aucune base Trivy disponible"
+        exit 1
+      displayName: "📥 Base de vulnérabilités Trivy"
+
     - script: |
         set -e
         export PATH="$HOME/.local/bin:$PATH"
         for repo in $(backendRepository) $(frontendRepository); do
           echo "=== 🔍 $repo:$(imageTag) ==="
           trivy image \
-            --cache-dir /tmp/trivy-cache \
+            --cache-dir "$HOME/.cache/trivy" \
+            --skip-db-update \
+            --no-progress \
             --timeout 30m \
             --exit-code 0 \
             --ignore-unfixed \
@@ -336,7 +362,6 @@ stages:
         done
         echo "✅ Trivy Scan terminé"
       displayName: "🔍 Trivy Security Scan"
-
 # =====================================================
 # 7. DEPLOY DEV
 # =====================================================
