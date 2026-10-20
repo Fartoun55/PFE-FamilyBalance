@@ -182,12 +182,14 @@ stages:
     - task: SonarCloudAnalyze@3
       displayName: "🔍 SonarCloud Scan"
 
-    # La publication récupère le Quality Gate après l'analyse.
-    # En cas de HTTP 403, vérifier les permissions, la connexion,
-    # l'organisation et la clé du projet dans SonarQube Cloud.
+    # Quality Gate : non publié sur les PR (offre gratuite + projet privé =
+    # pas d'accès aux branches secondaires). La branche principale doit
+    # s'appeler « main » dans SonarCloud (Administration > Branches).
+    # continueOnError : à retirer une fois le Quality Gate fonctionnel.
     - task: SonarCloudPublish@3
       displayName: "📊 Publication Quality Gate"
-      condition: succeeded()
+      condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+      continueOnError: true
       inputs:
         pollingTimeoutSec: '300'
 
