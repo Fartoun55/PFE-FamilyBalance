@@ -26,10 +26,11 @@ const {
   validatePasswordResetConfirmInput,
   validateUpdateProfileInput,
 } = require('../validators/authValidators');
+const { useSecureCookies } = require('../config/env');
 
 const cookieOptions = () => ({
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
+  secure: useSecureCookies(),
   sameSite: 'lax',
   path: '/',
 });

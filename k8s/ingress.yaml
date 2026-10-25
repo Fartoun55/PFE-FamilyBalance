@@ -1,15 +1,13 @@
-# Point d'entrée public en HTTPS.
+# Point d'entrée public en HTTP : http://familybalance-app.com
 #
-# Prérequis (une seule fois sur le cluster) :
-#   - contrôleur ingress-nginx :
-#       helm install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace \
-#         --set controller.service.externalTrafficPolicy=Local
-#   - cert-manager et un ClusterIssuer « letsencrypt-prod » (certificat TLS automatique)
-#   - un enregistrement DNS du domaine vers l'IP publique du contrôleur ingress-nginx
-# Remplacez familybalance.example.com par votre domaine (et CLIENT_ORIGIN dans backend.yaml).
+# Prérequis sur MicroK8s : microk8s enable ingress (classe d'Ingress « public »)
+# et le nom familybalance-app.com résolu vers l'IP de la machine (DNS ou fichier hosts).
 #
-# HTTPS est indispensable : le cookie de session (jeton de rafraîchissement) est marqué
-# « Secure » en production et n'est pas conservé par le navigateur en HTTP simple.
+# Le site est servi en HTTP simple, sans certificat. Le backend reçoit donc
+# COOKIE_SECURE=false (voir backend.yaml) : sinon le navigateur refuserait le cookie
+# de session et l'utilisateur serait déconnecté au bout de 15 minutes.
+# Pour repasser en HTTPS : ajouter un bloc tls + cert-manager, ssl-redirect à "true",
+# CLIENT_ORIGIN en https:// et COOKIE_SECURE à "true".
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -17,8 +15,8 @@ metadata:
   name: familybalance
   namespace: familybalance
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # HTTP simple : pas de redirection forcée vers HTTPS
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
     # Téléversement des ressources éducatives (15 Mo max côté API)
     nginx.ingress.kubernetes.io/proxy-body-size: "16m"
     # Connexions WebSocket (Socket.IO) longues
@@ -26,10 +24,6 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: public
-  tls:
-    - hosts:
-        - familybalance-app.com
-      secretName: familybalance-tls
   rules:
     - host: familybalance-app.com
       http:

@@ -27,7 +27,22 @@ const validateEnv = () => {
   return env;
 };
 
+/**
+ * Cookie de session « Secure » (envoyé uniquement en HTTPS) ?
+ * Par défaut : oui en production. COOKIE_SECURE=false le désactive pour un site servi
+ * en HTTP simple — sinon le navigateur refuse le cookie et la session expire au bout
+ * de la durée du jeton d'accès.
+ */
+const useSecureCookies = () => {
+  if (process.env.COOKIE_SECURE) {
+    return process.env.COOKIE_SECURE === 'true';
+  }
+
+  return process.env.NODE_ENV === 'production';
+};
+
 module.exports = {
   env,
   validateEnv,
+  useSecureCookies,
 };
