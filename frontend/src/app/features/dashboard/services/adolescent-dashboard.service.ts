@@ -38,10 +38,6 @@ export interface AdolescentDashboard {
   providedIn: 'root'
 })
 export class AdolescentDashboardService {
-  // Aligné sur API_BASE_URL ('/api', relatif) comme tous les autres services de l'app :
-  // l'ancienne valeur pointait en dur sur environment.apiUrl ('http://localhost:5001/api'),
-  // une URL absolue qui n'existe que sur cette machine de développement précise et qui
-  // aurait cassé le dashboard adolescent dans n'importe quel autre déploiement.
   private baseUrl = `${API_BASE_URL}/adolescent-dashboard`;
 
   constructor(private http: HttpClient) {}

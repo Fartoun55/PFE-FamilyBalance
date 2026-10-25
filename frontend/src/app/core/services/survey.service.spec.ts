@@ -107,7 +107,7 @@ describe('SurveyService', () => {
         httpMock.expectNone(`${API_BASE_URL}/surveys/catalog`);
       });
 
-      const req = httpMock.expectOne(`${API_BASE_URL}/surveys/catalog`);
+      const req = httpMock.expectOne((r) => r.url === `${API_BASE_URL}/surveys/catalog`);
       req.flush(mockCatalogResponse);
     });
 
@@ -148,7 +148,7 @@ describe('SurveyService', () => {
         }
       );
 
-      const req = httpMock.expectOne(`${API_BASE_URL}/surveys/catalog`);
+      const req = httpMock.expectOne((r) => r.url === `${API_BASE_URL}/surveys/catalog`);
       req.error(new ErrorEvent('Network error'), {
         status: 500,
         statusText: 'Internal Server Error',
@@ -165,11 +165,11 @@ describe('SurveyService', () => {
           done();
         });
 
-        const req2 = httpMock.expectOne(`${API_BASE_URL}/surveys/catalog`);
+        const req2 = httpMock.expectOne((r) => r.url === `${API_BASE_URL}/surveys/catalog`);
         req2.flush(mockCatalogResponse);
       });
 
-      const req1 = httpMock.expectOne(`${API_BASE_URL}/surveys/catalog`);
+      const req1 = httpMock.expectOne((r) => r.url === `${API_BASE_URL}/surveys/catalog`);
       req1.flush(mockCatalogResponse);
     });
   });
@@ -264,7 +264,7 @@ describe('SurveyService', () => {
         }
       );
 
-      const req = httpMock.expectOne(`${API_BASE_URL}/surveys/catalog`);
+      const req = httpMock.expectOne((r) => r.url === `${API_BASE_URL}/surveys/catalog`);
       req.error(new ErrorEvent('Network error'));
     });
   });

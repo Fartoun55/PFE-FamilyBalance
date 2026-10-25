@@ -150,6 +150,8 @@ export class LoginPage {
               queryParams: { token: response.mfaToken },
               state: {
                 maskedEmail: response.maskedEmail,
+                mfaCodeSent: response.mfaCodeSent,
+                challengeExpiresAt: response.challengeExpiresAt,
               },
             });
             return;

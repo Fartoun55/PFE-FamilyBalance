@@ -161,7 +161,9 @@ const login = asyncHandler(async (req, res) => {
   if (result.requiresMfa) {
     res.status(200).json({
       status: 'success',
-      message: 'Code MFA envoyé. Veuillez le saisir pour terminer la connexion.',
+      message: result.mfaCodeSent
+        ? 'Code MFA envoyé. Veuillez le saisir pour terminer la connexion.'
+        : "Le code MFA n'a pas pu être envoyé par e-mail. Contactez l'administrateur de la plateforme.",
       user: result.user,
       requiresMfa: true,
       mfaToken: result.mfaToken,

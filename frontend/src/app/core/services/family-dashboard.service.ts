@@ -17,13 +17,6 @@ export class FamilyDashboardService {
     });
   }
 
-  getChildDetails(childId: string): Observable<{ status: string } & FamilyDashboardChild> {
-    return this.http.get<{ status: string } & FamilyDashboardChild>(
-      `${API_BASE_URL}/family-dashboard/children/${childId}`,
-      { withCredentials: true }
-    );
-  }
-
   downloadChildPdf(childId: string): Observable<Blob> {
     return this.http.get(`${API_BASE_URL}/family-dashboard/children/${childId}/report-pdf`, {
       withCredentials: true,

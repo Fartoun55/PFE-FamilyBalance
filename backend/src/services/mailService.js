@@ -30,10 +30,18 @@ const createTransport = () => {
   });
 };
 
+// Un e-mail non envoyé ne doit jamais passer inaperçu : on l'écrit dans les journaux
+// du serveur (sans aucun identifiant SMTP).
+const logMailFailure = (subject, reason) => {
+  // eslint-disable-next-line no-console
+  console.error(`[mail] E-mail non envoyé (« ${subject} ») : ${reason}`);
+};
+
 const sendMailOrFallback = async (buildMessage, fallbackResult) => {
   const transport = createTransport();
 
   if (!transport) {
+    logMailFailure(buildMessage().subject, 'SMTP non configuré (SMTP_HOST, SMTP_USER et SMTP_PASS requis).');
     return fallbackResult;
   }
 
@@ -50,6 +58,10 @@ const sendMailOrFallback = async (buildMessage, fallbackResult) => {
     };
   } catch (error) {
     if (env.nodeEnv !== 'production' && isSmtpAuthError(error)) {
+      logMailFailure(
+        buildMessage().subject,
+        `identifiants SMTP refusés par le serveur (${error.code || 'EAUTH'}). Avec Gmail : générer un nouveau mot de passe d'application et le mettre dans SMTP_PASS.`
+      );
       return fallbackResult;
     }
 
@@ -138,6 +150,19 @@ const sendEmailVerificationEmail = async ({ to, verifyUrl, firstName }) => {
 };
 
 const sendMfaCodeEmail = async ({ to, code, firstName }) => {
+  const result = await sendMfaCodeEmailOrFallback({ to, code, firstName });
+
+  // Développement uniquement : sans e-mail, le code est écrit dans la console du serveur
+  // pour pouvoir terminer la connexion. Jamais en production.
+  if (!result.sent && env.nodeEnv !== 'production') {
+    // eslint-disable-next-line no-console
+    console.warn(`[mail] [développement] Code MFA pour ${to} : ${code}`);
+  }
+
+  return result;
+};
+
+const sendMfaCodeEmailOrFallback = async ({ to, code, firstName }) => {
   const fallbackResult = {
     sent: false,
     message: 'SMTP non configuré ou invalide. Le code MFA a été généré localement.',

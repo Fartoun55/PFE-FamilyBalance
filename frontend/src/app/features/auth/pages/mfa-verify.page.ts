@@ -30,6 +30,10 @@ import { IllustrationComponent } from '../../../shared/components/illustration/i
           <span class="email-chip" *ngIf="maskedEmail()"><mat-icon>mail_outline</mat-icon>{{ maskedEmail() }}</span>
         </header>
 
+        <div class="fb-alert fb-alert--warning" role="alert" *ngIf="codeNotSent()">
+          <mat-icon>mark_email_unread</mat-icon>
+          <span>L'e-mail contenant votre code n'a pas pu être envoyé (configuration de messagerie du serveur). Réessayez plus tard ou contactez l'administrateur.</span>
+        </div>
         <div class="fb-alert fb-alert--success" role="status" *ngIf="successMessage()">
           <mat-icon>check_circle</mat-icon><span>{{ successMessage() }}</span>
         </div>
@@ -80,7 +84,7 @@ import { IllustrationComponent } from '../../../shared/components/illustration/i
 
         <p class="security-note">
           <mat-icon>lock</mat-icon>
-          Ce code est à usage unique et valable 5 minutes. Ne le partagez jamais, y compris avec le support FamilyBalance.
+          Ce code est à usage unique et valable 10 minutes. Ne le partagez jamais, y compris avec le support FamilyBalance.
         </p>
 
         <footer class="auth-card-foot">
@@ -211,8 +215,11 @@ export class MfaVerifyPage implements OnInit, OnDestroy {
   readonly successMessage = signal('');
   readonly mfaToken       = signal('');
   readonly maskedEmail    = signal('');
+  /** Le serveur signale que l'e-mail du code n'a pas pu partir (SMTP absent ou refusé). */
+  readonly codeNotSent    = signal(false);
   readonly shaking        = signal(false);
-  readonly timerSeconds   = signal(299);
+  /** Durée de validité du code (10 min côté serveur), recalée sur challengeExpiresAt. */
+  readonly timerSeconds   = signal(600);
   readonly hasError       = signal(false);
 
   readonly otpControls = Array.from({ length: 6 }, () =>
@@ -230,7 +237,7 @@ export class MfaVerifyPage implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     const token = this.route.snapshot.queryParamMap.get('token');
-    const state  = history.state as { maskedEmail?: string };
+    const state  = history.state as { maskedEmail?: string; mfaCodeSent?: boolean; challengeExpiresAt?: string };
 
     if (!token) {
       this.errorMessage.set('Token MFA manquant. Veuillez recommencer la connexion.');
@@ -239,6 +246,11 @@ export class MfaVerifyPage implements OnInit, OnDestroy {
 
     this.mfaToken.set(token);
     this.maskedEmail.set(state?.maskedEmail ?? '');
+    this.codeNotSent.set(state?.mfaCodeSent === false);
+    const expiresAt = state?.challengeExpiresAt ? new Date(state.challengeExpiresAt).getTime() : NaN;
+    if (!Number.isNaN(expiresAt)) {
+      this.timerSeconds.set(Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)));
+    }
 
     this.startTimer();
     setTimeout(() => document.getElementById('otp-0')?.focus(), 100);

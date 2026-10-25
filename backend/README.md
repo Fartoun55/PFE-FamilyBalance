@@ -1,67 +1,32 @@
-# Backend FamilyBalance
+# FamilyBalance — Backend
 
-Le backend de l'application FamilyBalance est une API REST construite avec Node.js, Express.js et MongoDB (Mongoose). Il fournit une couche métier sécurisée pour gérer l'authentification, les profils familiaux, les enquêtes, les scores, les ressources éducatives et la téléconsultation.
+API REST et temps réel de FamilyBalance : Node.js, Express, MongoDB (Mongoose) et Socket.IO. La présentation complète du projet, les variables d'environnement et le déploiement sont décrits dans le [README principal](../README.md).
 
-## Principales fonctionnalités
+## Commandes
 
-- Authentification et gestion des utilisateurs
-  - Inscription / connexion
-  - JWT pour l'accès sécurisé
-  - Refresh tokens
-  - Vérification d'email et réinitialisation de mot de passe
-  - Contrôle de rôles (`parent`, `specialist`, `admin`)
+```bash
+cp .env.example .env     # puis adapter les valeurs
+npm install
+npm run dev              # API sur http://localhost:5001 (rechargement automatique)
+npm start                # démarrage sans rechargement
+npm test                 # tests Jest + Supertest
+npm run check:smtp       # vérifie la configuration d'envoi des e-mails
+```
 
-- Gestion des surveys
-  - Questions dynamiques
-  - Sessions de réponses
-  - Enregistrement des résultats
-  - Calcul de score
+## Organisation
 
-- Tableau de bord famille
-  - Synthèses personnalisées
-  - Historiques de score
-  - Export PDF/Word/Excel
+| Dossier | Contenu |
+|---|---|
+| `src/config` | Variables d'environnement, connexion MongoDB, règles CORS |
+| `src/routes` | Routes de l'API (`/api/auth`, `/api/surveys`, `/api/scoring`, `/api/teleconsultation`, `/api/education`, `/api/notifications`, `/api/admin`…) |
+| `src/controllers` | Lecture des requêtes et envoi des réponses |
+| `src/services` | Logique métier (authentification, questionnaire, scoring, téléconsultation, notifications, e-mails, exports) |
+| `src/models` | Schémas Mongoose |
+| `src/middleware` | Authentification, contrôle des rôles, gestion des erreurs, téléversement |
+| `src/validators` | Validation des données reçues |
+| `src/realtime` | Serveur Socket.IO (notifications et messages en temps réel) |
+| `src/data` | Questions du questionnaire chargées au premier démarrage |
+| `src/scripts` | Scripts ponctuels (`check:smtp`, `seed:avatars`) |
+| `tests` | Tests de l'API |
 
-- Contenu pédagogique
-  - Ressources éducatives
-  - Suivi des progrès d'apprentissage
-  - Articles et outils pour les parents
-
-- Téléconsultation
-  - Gestion des rendez-vous
-  - Messagerie entre parents et spécialistes
-  - Profils de spécialistes
-
-- Administration
-  - Gestion des données globales
-  - Actions réservées aux administrateurs
-  - Export et rapports
-
-## Architecture
-
-- `src/app.js` : configuration principale d'Express, middlewares et routes
-- `src/server.js` : initialisation du serveur et connexion MongoDB
-- `src/config/` : configuration de la base de données et des variables d'environnement
-- `src/routes/` : définition des routes par domaine fonctionnel
-- `src/controllers/` : gestion des requêtes entrantes et des réponses
-- `src/services/` : règles métier et accès aux modèles de données
-- `src/models/` : schémas Mongoose des entités
-- `src/utils/` : utilitaires pour les erreurs, les tokens et la logique asynchrone
-- `src/validators/` : validation des entrées utilisateur
-
-## Technologies utilisées
-
-- Node.js
-- Express.js
-- MongoDB / Mongoose
-- JWT
-- bcryptjs
-- dotenv
-- helmet
-- cors
-- nodemailer
-- pdfkit / xlsx / docx
-
-## Objectif
-
-La partie backend fournit une API modulaire et sécurisée pour supporter l'application Angular. Elle centralise la gestion des données et des règles métier autour de l'accompagnement familial face aux risques liés aux écrans, en fournissant des services d'évaluation, de suivi et de téléconsultation.
+Point d'entrée : `src/server.js` se connecte à MongoDB, puis démarre l'API et Socket.IO sur le même port.

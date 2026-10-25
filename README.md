@@ -149,6 +149,7 @@ npm start                 # http://localhost:4200
 | `backend: npm start` | Démarre l'API (production) |
 | `backend: npm run dev` | Démarre l'API avec rechargement automatique (nodemon) |
 | `backend: npm test` | Lance les tests Jest |
+| `backend: npm run check:smtp` | Vérifie la configuration d'envoi des e-mails (`-- adresse@exemple.com` pour envoyer un e-mail de test) |
 | `backend: npm run seed:avatars` | Ajoute un avatar aux adolescents qui n'en ont pas |
 | `frontend: npm run build` | Build Angular de production (`dist/familybalance-frontend/browser`) |
 | `frontend: node scripts/generate-illustrations.js` | Régénère les illustrations SVG de `src/assets/illustrations` |
@@ -184,7 +185,14 @@ npm test
 
 17 tests Jest (+ Supertest) vérifient l'API sans base de données : route de santé, en-têtes de sécurité, erreurs 404, refus d'accès sans jeton ou avec un jeton invalide (401), validation des entrées (400), règles CORS et attribut Secure du cookie de session.
 
-Côté frontend, le pipeline vérifie que le build de production compile.
+Côté frontend, 14 tests unitaires (Karma + Jasmine) couvrent le composant racine et le service du questionnaire (catalogue, cache, sessions, réponses) :
+
+```bash
+cd frontend
+npm test
+```
+
+Le pipeline vérifie en plus que le build de production compile.
 
 ## Déploiement
 

@@ -12,7 +12,6 @@ const { createAuthTokens, hashToken, verifyRefreshToken } = require('../utils/to
 const { generatePlainResetToken, hashResetToken } = require('../utils/passwordResetToken');
 const { sendResetPasswordEmail, sendEmailVerificationEmail, sendMfaCodeEmail } = require('./mailService');
 const { validatePassword } = require('../validators/authValidators');
-const { useSecureCookies } = require('../config/env');
 
 const REFRESH_TOKEN_COOKIE_NAME = 'familybalance_refresh_token';
 
@@ -49,14 +48,6 @@ const getRefreshTokenExpiryDate = () => {
 
   return new Date(now.getTime() + amount * multipliers[unit]);
 };
-
-const buildTokenCookieOptions = () => ({
-  httpOnly: true,
-  secure: useSecureCookies(),
-  sameSite: 'lax',
-  path: '/',
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-});
 
 const normalizeProfile = (profile = {}) => {
   const normalized = {};

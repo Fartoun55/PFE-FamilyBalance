@@ -59,7 +59,7 @@ const ruleValidator = (group: AbstractControl): ValidationErrors | null => {
               </div>
               <div class="fb-field">
                 <label class="fb-label" for="sf-phone">Téléphone</label>
-                <input id="sf-phone" class="fb-input" formControlName="phone" autocomplete="off" placeholder="+216 20 000 000" [class.invalid]="invalid('phone')" />
+                <input id="sf-phone" class="fb-input" formControlName="phone" autocomplete="off" placeholder="+216 20 123 456" [class.invalid]="invalid('phone')" />
                 <span class="fb-error-text" *ngIf="invalid('phone')">{{ errorOf('phone', 'Numéro invalide.') }}</span>
               </div>
             </div>

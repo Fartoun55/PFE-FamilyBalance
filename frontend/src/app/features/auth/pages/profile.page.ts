@@ -170,7 +170,7 @@ const QUICK_ACTIONS: QuickAction[] = [
 
               <div class="fb-field">
                 <label class="fb-label" for="phone">Téléphone <span class="optional">facultatif</span></label>
-                <input id="phone" class="fb-input" formControlName="phone" placeholder="+33 6 12 34 56 78" autocomplete="tel" />
+                <input id="phone" class="fb-input" formControlName="phone" placeholder="+216 20 123 456" autocomplete="tel" />
               </div>
 
               <div class="readonly">

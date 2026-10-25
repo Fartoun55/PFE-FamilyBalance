@@ -297,7 +297,7 @@ interface ModerationItem {
                     </div>
                     <div class="f-group">
                       <label>Téléphone</label>
-                      <input class="f-input" formControlName="phone" placeholder="+33 6 …"/>
+                      <input class="f-input" formControlName="phone" placeholder="+216 20 123 456"/>
                     </div>
                   </div>
 

@@ -116,7 +116,7 @@ import { IllustrationComponent } from '../../../shared/components/illustration/i
                 <label class="auth-label" for="phone"><span>Téléphone<span class="auth-optional">facultatif</span></span></label>
                 <div class="auth-control">
                   <mat-icon>call</mat-icon>
-                  <input id="phone" formControlName="phone" placeholder="+33 6 12 34 56 78" autocomplete="tel" />
+                  <input id="phone" formControlName="phone" placeholder="+216 20 123 456" autocomplete="tel" />
                 </div>
               </div>
               </div>

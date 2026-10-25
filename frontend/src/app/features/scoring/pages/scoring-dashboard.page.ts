@@ -362,7 +362,6 @@ export class ScoringDashboardPage implements OnInit {
   readonly openAlerts = signal<RiskAlert[]>([]);
   readonly latestCompletedSessionId = signal<string | null>(null);
   readonly yGrid = [0, 25, 50, 75, 100];
-  readonly trendRecords = computed(() => [...this.historyRecords()].slice().reverse());
   readonly selectedWindow = signal<'all' | 3 | 6 | 12>('all');
   readonly filteredHistoryRecords = computed(() => {
     const window = this.selectedWindow();
