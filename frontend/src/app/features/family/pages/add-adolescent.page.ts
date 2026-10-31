@@ -180,13 +180,15 @@ export class AddAdolescentPage implements OnInit {
     }).subscribe({
       next: (response) => {
         this.loading = false;
-        this.snackBar.open('Compte adolescent créé avec succès!', 'Fermer', {
-          duration: 3000,
+        // Le message précise l'adresse de l'adolescent à qui l'e-mail d'activation est parti,
+        // ou signale que l'envoi a échoué : c'est l'adolescent qui doit activer son compte.
+        this.snackBar.open(response.message || 'Compte adolescent créé.', 'Fermer', {
+          duration: response.verificationEmailSent ? 8000 : 12000,
         });
         this.form.reset();
         setTimeout(() => {
           this.router.navigate(['/family/dashboard']);
-        }, 1000);
+        }, 1500);
       },
       error: (error) => {
         this.loading = false;

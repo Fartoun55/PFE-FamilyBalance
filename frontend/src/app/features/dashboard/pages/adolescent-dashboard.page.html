@@ -85,7 +85,7 @@
           <span class="bar" role="img" [attr.aria-label]="'Score ' + score.globalScore + ' sur 100'">
             <span class="bar-fill" [ngClass]="scoreTone(score.globalScore)" [style.width.%]="score.globalScore || 0"></span>
           </span>
-          <strong class="score-text">{{ score.globalScore }}/100</strong>
+          <strong class="score-text">{{ score.globalScore | number: '1.0-0' }}/100</strong>
         </li>
       </ul>
       <ng-template #noScores>

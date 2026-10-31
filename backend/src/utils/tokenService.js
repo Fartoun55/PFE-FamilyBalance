@@ -52,8 +52,6 @@ const createAuthTokens = (user) => {
 module.exports = {
   createAuthTokens,
   hashToken,
-  signAccessToken,
-  signRefreshToken,
   verifyAccessToken,
   verifyRefreshToken,
 };

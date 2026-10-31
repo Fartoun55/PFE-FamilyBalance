@@ -25,8 +25,17 @@ export interface ScoreRecord {
   riskCategory: 'equilibre-sain' | 'vigilance-legere' | 'risque-modere' | 'risque-eleve';
   recommendations: string[];
   answerCount: number;
+  /** Domaines combinés dans ce score (absents des scores calculés avant le score combiné). */
+  domainsCovered?: ScoreDomainCoverage[];
+  domainsMissing?: ScoreDomainCoverage[];
   trigger: 'auto' | 'manual';
   calculatedAt: string;
+}
+
+export interface ScoreDomainCoverage {
+  domain: string;
+  domainLabel: string;
+  completedAt?: string;
 }
 
 export interface RiskAlert {

@@ -409,13 +409,11 @@ const notifyResourcePublished = (resource) => safely('ressource publiée', async
 });
 
 module.exports = {
-  createNotification,
   listNotifications,
   getUnreadCount,
   markAsRead,
   markAllAsRead,
   deleteNotification,
-  syncReminders,
   notifyAppointmentCreated,
   notifyAppointmentChanged,
   notifyBilanShared,

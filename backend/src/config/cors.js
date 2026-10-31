@@ -28,4 +28,4 @@ const corsOrigin = (origin, callback) => {
   callback(new Error(`Origin not allowed by CORS: ${origin}`));
 };
 
-module.exports = { allowedOrigins, isLocalDevelopmentOrigin, corsOrigin };
+module.exports = { corsOrigin };

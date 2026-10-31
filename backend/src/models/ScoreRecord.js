@@ -22,6 +22,17 @@ const weightSchema = new Schema(
   { _id: false }
 );
 
+// Domaine du questionnaire pris en compte (ou restant à évaluer) dans un score combiné.
+const domainCoverageSchema = new Schema(
+  {
+    domain: { type: String, required: true, trim: true },
+    domainLabel: { type: String, required: true, trim: true },
+    session: { type: Schema.Types.ObjectId, ref: 'SurveySession' },
+    completedAt: { type: Date },
+  },
+  { _id: false }
+);
+
 const scoreRecordSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -51,6 +62,9 @@ const scoreRecordSchema = new Schema(
     },
     recommendations: [{ type: String, trim: true }],
     answerCount: { type: Number, default: 0 },
+    // Domaines combinés dans ce score (dernier questionnaire de chaque domaine) et domaines manquants.
+    domainsCovered: { type: [domainCoverageSchema], default: [] },
+    domainsMissing: { type: [domainCoverageSchema], default: [] },
     trigger: { type: String, enum: ['auto', 'manual'], default: 'auto' },
     calculatedAt: { type: Date, default: Date.now, index: true },
   },

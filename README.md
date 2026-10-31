@@ -28,7 +28,7 @@ Projet de fin d'études (PFE) — monorepo composé d'un frontend Angular, d'une
 Fonctions transverses :
 
 - **Questionnaire adaptatif** : questions selon l'âge et le domaine, règles de branchement selon les réponses, reprise d'une session en cours.
-- **Scoring** : score global sur 100, sous-scores (comportemental, émotionnel, social, parental), niveau de risque (vert, orange, rouge), alertes et recommandations.
+- **Scoring** : score global sur 100, sous-scores (comportemental, émotionnel, social, parental), niveau de risque (vert, orange, rouge), alertes et recommandations. Le score **combine le dernier questionnaire de chaque domaine** (Émotions, Comportements, Social, Temps d'écran) réalisé dans les 90 derniers jours, pour la même tranche d'âge ; la page Résultats indique les domaines évalués et ceux qui restent à compléter.
 - **Notifications en temps réel** (Socket.IO) : rendez-vous, nouveaux messages, résultats disponibles, alertes de risque, rappels de réévaluation, ressources publiées.
 - **Téléconsultation** : annuaire et créneaux disponibles, réservation sans double réservation, messagerie chiffrée (AES-256-GCM), visioconférence Jitsi.
 
@@ -169,6 +169,7 @@ Backend (`backend/.env` en local, ConfigMap et Secret Kubernetes en production) 
 | `CLIENT_ORIGIN` | Oui en production | Origine(s) autorisée(s) par CORS et Socket.IO, séparées par des virgules |
 | `ADMIN_REGISTRATION_KEY` | Recommandée | Clé demandée pour créer un compte administrateur |
 | `TELECONSULTATION_SECRET` | Recommandée | Clé de chiffrement des messages de téléconsultation |
+| `APP_URL` | Recommandée en production | Adresse publique du site utilisée dans les liens des e-mails (activation, mot de passe oublié). Par défaut : première origine de `CLIENT_ORIGIN` |
 | `COOKIE_SECURE` | Non | Attribut Secure du cookie de session : actif par défaut en production ; `false` pour un site servi en HTTP |
 | `TRUST_PROXY` | En production | Nombre de proxys devant l'API (`2` : Ingress puis nginx), pour que le limiteur de débit voie l'IP réelle des visiteurs |
 | `JWT_ACCESS_EXPIRES_IN` / `JWT_REFRESH_EXPIRES_IN` | Non | Durées de validité (`15m` / `7d`) |
@@ -183,7 +184,7 @@ cd backend
 npm test
 ```
 
-17 tests Jest (+ Supertest) vérifient l'API sans base de données : route de santé, en-têtes de sécurité, erreurs 404, refus d'accès sans jeton ou avec un jeton invalide (401), validation des entrées (400), règles CORS et attribut Secure du cookie de session.
+24 tests Jest (+ Supertest) vérifient sans base de données : route de santé, en-têtes de sécurité, erreurs 404, refus d'accès sans jeton ou avec un jeton invalide (401), validation des entrées (400), règles CORS, attribut Secure du cookie de session et calcul du score combiné (sélection du dernier questionnaire par domaine, fenêtre de 90 jours, tranche d'âge, domaines manquants).
 
 Côté frontend, 14 tests unitaires (Karma + Jasmine) couvrent le composant racine et le service du questionnaire (catalogue, cache, sessions, réponses) :
 

@@ -110,5 +110,4 @@ const getAdolescentResources = asyncHandler(async (req, res) => {
 module.exports = {
   adolescentDashboard,
   getAdolescentResources,
-  getAdolescentDashboard,
 };

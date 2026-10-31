@@ -466,9 +466,9 @@ const MESSAGE_POLL_MS = 60000;
                   <ng-container *ngIf="appt.bilanShared && appt.sharedScoreSnapshot as bilan; else noBilan">
                     <span class="slots-label">Bilan FamilyBalance partagé</span>
                     <div class="bilan">
-                      <strong>{{ bilan.globalScore }}/100</strong>
+                      <strong>{{ bilan.globalScore | number: '1.0-0' }}/100</strong>
                       <span class="risk-badge" [attr.data-risk]="bilan.riskLevel">{{ riskLabel(bilan.riskLevel) }}</span>
-                      <small>Comportemental {{ bilan.subScores.comportemental }} · Émotionnel {{ bilan.subScores.emotionnel }} · Social {{ bilan.subScores.social }} · Parental {{ bilan.subScores.parental }}</small>
+                      <small>Comportemental {{ bilan.subScores.comportemental | number: '1.0-0' }} · Émotionnel {{ bilan.subScores.emotionnel | number: '1.0-0' }} · Social {{ bilan.subScores.social | number: '1.0-0' }} · Parental {{ bilan.subScores.parental | number: '1.0-0' }}</small>
                     </div>
                   </ng-container>
                   <ng-template #noBilan>
@@ -595,7 +595,7 @@ const MESSAGE_POLL_MS = 60000;
                     <div class="score-bar-fill" [style.width.%]="patient.latestScore.globalScore"
                          [attr.data-risk]="patient.latestScore.riskLevel"></div>
                   </div>
-                  <span class="score-val">{{ patient.latestScore.globalScore }}/100</span>
+                  <span class="score-val">{{ patient.latestScore.globalScore | number: '1.0-0' }}/100</span>
                   <span class="risk-badge" [attr.data-risk]="patient.latestScore.riskLevel">
                     {{ riskLabel(patient.latestScore.riskLevel) }}
                   </span>

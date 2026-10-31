@@ -820,7 +820,6 @@ export class DynamicSurveyPage implements OnInit {
       .map((a) => a.questionCode);
 
     if (answeredQuestions.length > 0) {
-      const previousCode = answeredQuestions[answeredQuestions.length - 1];
       this.currentAnswerIndex.set(this.currentAnswerIndex() - 1);
       this.successMessage.set('Navigation vers la question précédente.');
     }

@@ -1,8 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { RouterLink } from '@angular/router';
 import { ScoringService } from '../../../core/services/scoring.service';
 import { ChildContextService } from '../../../core/services/child-context.service';
+import { AuthService } from '../../../core/services/auth.service';
+import { Adolescent, AdolescentService } from '../../family/services/adolescent.service';
 import { RiskAlert, ScorePeriodStat, ScoreRecord } from '../models/scoring.models';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
@@ -10,7 +13,7 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
 @Component({
   selector: 'app-scoring-dashboard-page',
   standalone: true,
-  imports: [CommonModule, MatIconModule, EmptyStateComponent, PageHeaderComponent],
+  imports: [CommonModule, MatIconModule, RouterLink, EmptyStateComponent, PageHeaderComponent],
   template: `
     <app-page-header
       eyebrow="Résultats"
@@ -33,10 +36,27 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
       </button>
     </app-page-header>
 
-    <div class="child-banner" *ngIf="childContext.selectedChildId()">
+    <!-- Parent : choix de la personne dont on consulte les résultats (soi-même ou un enfant) -->
+    <div class="child-banner" *ngIf="children().length" role="group" aria-label="Résultats de">
       <mat-icon>face</mat-icon>
-      <p>Résultats de <strong>{{ childContext.selectedChildName() }}</strong></p>
-      <button class="fb-btn fb-btn--ghost fb-btn--sm" type="button" (click)="childContext.clear(); refreshAll()">Voir mes propres résultats</button>
+      <p>Résultats de :</p>
+      <div class="who-chips">
+        <button
+          type="button"
+          class="who-chip"
+          [class.active]="!childContext.selectedChildId()"
+          [attr.aria-pressed]="!childContext.selectedChildId()"
+          (click)="showOwnResults()"
+        >Moi</button>
+        <button
+          *ngFor="let child of children()"
+          type="button"
+          class="who-chip"
+          [class.active]="childContext.selectedChildId() === child._id"
+          [attr.aria-pressed]="childContext.selectedChildId() === child._id"
+          (click)="showChildResults(child)"
+        >{{ child.firstName }} {{ child.lastName }}</button>
+      </div>
     </div>
 
     <div class="fb-alert fb-alert--error block" role="alert" *ngIf="errorMessage()">
@@ -49,6 +69,28 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
       <mat-icon>info</mat-icon>
       Aucune évaluation terminée pour le moment : le recalcul sera possible après un questionnaire complet.
     </p>
+
+    <!-- Couverture du bilan : domaines du questionnaire pris en compte dans le score -->
+    <section class="coverage" *ngIf="latestRecord()?.domainsCovered?.length" aria-label="Domaines évalués">
+      <div class="coverage-head">
+        <strong>{{ coveredCount() }} domaine{{ coveredCount() > 1 ? 's' : '' }} sur {{ totalDomains() }} évalué{{ coveredCount() > 1 ? 's' : '' }}</strong>
+        <span *ngIf="missingCount(); else completeTpl">
+          Le score combine le dernier questionnaire de chaque domaine. Complétez les domaines restants pour un bilan complet.
+        </span>
+        <ng-template #completeTpl><span>Bilan complet : le score combine les {{ totalDomains() }} domaines.</span></ng-template>
+      </div>
+      <ul class="coverage-list">
+        <li *ngFor="let d of latestRecord()!.domainsCovered" class="done">
+          <mat-icon>check_circle</mat-icon>{{ d.domainLabel }}
+        </li>
+        <li *ngFor="let d of latestRecord()!.domainsMissing" class="todo">
+          <mat-icon>radio_button_unchecked</mat-icon>{{ d.domainLabel }}
+        </li>
+      </ul>
+      <a *ngIf="missingCount()" class="fb-btn fb-btn--accent fb-btn--sm" routerLink="/survey/dynamic">
+        <mat-icon>playlist_add_check</mat-icon>Compléter le bilan
+      </a>
+    </section>
 
     <div class="grid" *ngIf="latestRecord(); else emptyTpl">
       <!-- Score global -->
@@ -129,8 +171,8 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
         <div class="periods">
           <article *ngFor="let item of periodStats()" class="period">
             <h3>{{ item.months }} mois</h3>
-            <p>Moyenne <strong>{{ item.averageGlobalScore ?? '—' }}</strong></p>
-            <p>Dernier <strong>{{ item.latestGlobalScore ?? '—' }}</strong></p>
+            <p>Moyenne <strong>{{ (item.averageGlobalScore | number: '1.0-0') ?? '—' }}</strong></p>
+            <p>Dernier <strong>{{ (item.latestGlobalScore | number: '1.0-0') ?? '—' }}</strong></p>
             <small>
               <span class="pip ok"></span>{{ item.riskDistribution.green }}
               <span class="pip warn"></span>{{ item.riskDistribution.orange }}
@@ -235,7 +277,50 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
         background: var(--fb-primary-tint);
         color: var(--fb-primary-strong);
       }
-      .child-banner p { flex: 1; margin: 0; }
+      .child-banner p { margin: 0; font-weight: 600; }
+      .who-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+      .who-chip {
+        padding: 7px 14px;
+        border: 1.5px solid rgba(var(--fb-primary-rgb), 0.25);
+        border-radius: var(--fb-radius-pill);
+        background: var(--fb-surface);
+        color: var(--fb-primary-strong);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .who-chip:hover { border-color: var(--fb-primary); }
+
+      .coverage {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px 20px;
+        margin-bottom: 20px;
+        padding: 16px 20px;
+        border: 1px solid var(--fb-border);
+        border-radius: var(--fb-radius-md);
+        background: var(--fb-surface);
+      }
+      .coverage-head { display: grid; gap: 2px; flex: 1 1 280px; min-width: 0; }
+      .coverage-head strong { font-size: 15px; }
+      .coverage-head span { font-size: 13.5px; color: var(--fb-text-mid); }
+      .coverage-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+      .coverage-list li {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: var(--fb-radius-pill);
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+      .coverage-list li mat-icon { width: 18px; height: 18px; font-size: 18px; }
+      .coverage-list li.done { background: var(--fb-primary-tint); color: var(--fb-primary-strong); }
+      .coverage-list li.todo { border: 1.5px dashed var(--fb-border-strong); color: var(--fb-muted); }
+      .who-chip.active { background: var(--fb-primary); border-color: var(--fb-primary); color: #fff; }
+      .who-chip:focus-visible { outline: 3px solid rgba(var(--fb-primary-rgb), 0.35); outline-offset: 2px; }
 
       .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
       .history, .reco, .method { grid-column: 1 / -1; }
@@ -363,6 +448,9 @@ export class ScoringDashboardPage implements OnInit {
   readonly latestCompletedSessionId = signal<string | null>(null);
   readonly yGrid = [0, 25, 50, 75, 100];
   readonly selectedWindow = signal<'all' | 3 | 6 | 12>('all');
+  readonly coveredCount = computed(() => this.latestRecord()?.domainsCovered?.length ?? 0);
+  readonly missingCount = computed(() => this.latestRecord()?.domainsMissing?.length ?? 0);
+  readonly totalDomains = computed(() => this.coveredCount() + this.missingCount());
   readonly filteredHistoryRecords = computed(() => {
     const window = this.selectedWindow();
     const records = this.historyRecords();
@@ -429,12 +517,40 @@ export class ScoringDashboardPage implements OnInit {
     return '-';
   }
 
+  /** Enfants rattachés (parent uniquement) : proposés dans le sélecteur « Résultats de ». */
+  readonly children = signal<Adolescent[]>([]);
+  /** Bascule automatique vers un enfant, faite une seule fois à l'ouverture de la page. */
+  private autoSelectDone = false;
+
   constructor(
     private readonly scoringService: ScoringService,
-    protected readonly childContext: ChildContextService
+    protected readonly childContext: ChildContextService,
+    private readonly authService: AuthService,
+    private readonly adolescentService: AdolescentService
   ) {}
 
   ngOnInit(): void {
+    if (this.authService.currentUser()?.role !== 'parent') {
+      this.refreshAll();
+      return;
+    }
+
+    this.adolescentService.getMyAdolescents().subscribe({
+      next: (response) => {
+        this.children.set(response.adolescents || []);
+        this.refreshAll();
+      },
+      error: () => this.refreshAll(),
+    });
+  }
+
+  showOwnResults(): void {
+    this.childContext.clear();
+    this.refreshAll();
+  }
+
+  showChildResults(child: Adolescent): void {
+    this.childContext.setChild(child._id, child.firstName, child.adolescentProfile?.birthDate ?? null);
     this.refreshAll();
   }
 
@@ -446,6 +562,13 @@ export class ScoringDashboardPage implements OnInit {
 
     this.scoringService.latest(childId).subscribe({
       next: (latest) => {
+        // Parent sans résultat personnel : on affiche directement le premier enfant qui en a.
+        if (!childId && !latest.latestRecord && !this.autoSelectDone && this.children().length) {
+          this.autoSelectDone = true;
+          this.showChildResults(this.children()[0]);
+          return;
+        }
+        this.autoSelectDone = true;
         this.latestRecord.set(latest.latestRecord);
         this.openAlerts.set(latest.openAlerts || []);
         this.latestCompletedSessionId.set(latest.latestCompletedSessionId);

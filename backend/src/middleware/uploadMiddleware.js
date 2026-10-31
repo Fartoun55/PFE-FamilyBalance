@@ -131,4 +131,4 @@ const verifyUploadedFileSignature = (filePath, declaredMimetype) => {
   return matchesSignature(header, declaredMimetype);
 };
 
-module.exports = { uploadResourceFile, deleteUploadedFile, verifyUploadedFileSignature, UPLOAD_ROOT };
+module.exports = { uploadResourceFile, deleteUploadedFile, verifyUploadedFileSignature };

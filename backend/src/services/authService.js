@@ -12,6 +12,7 @@ const { createAuthTokens, hashToken, verifyRefreshToken } = require('../utils/to
 const { generatePlainResetToken, hashResetToken } = require('../utils/passwordResetToken');
 const { sendResetPasswordEmail, sendEmailVerificationEmail, sendMfaCodeEmail } = require('./mailService');
 const { validatePassword } = require('../validators/authValidators');
+const { env, buildAppUrl, exposeSecretLinkInDev } = require('../config/env');
 
 const REFRESH_TOKEN_COOKIE_NAME = 'familybalance_refresh_token';
 
@@ -29,7 +30,7 @@ const maskEmail = (email) => {
 };
 
 const getRefreshTokenExpiryDate = () => {
-  const expiresIn = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
+  const expiresIn = env.jwtRefreshExpiresIn;
   const now = new Date();
   const match = expiresIn.match(/^(\d+)([smhd])$/i);
 
@@ -178,9 +179,7 @@ const registerUser = async (payload = {}, meta = {}) => {
   const role = payload.role || 'parent';
 
   if (role === 'admin') {
-    const expectedAdminKey = String(
-      process.env.ADMIN_REGISTRATION_KEY || 'familybalance-admin-dev-key'
-    ).trim();
+    const expectedAdminKey = String(env.adminRegistrationKey).trim();
     const providedAdminKey = String(payload.adminRegistrationKey || '').trim();
     if (!providedAdminKey || providedAdminKey !== expectedAdminKey) {
       throw new AppError("Clé d'inscription admin invalide.", 403);
@@ -241,7 +240,7 @@ const registerUser = async (payload = {}, meta = {}) => {
       expiresAt,
     });
 
-    const verifyUrl = `${process.env.CLIENT_ORIGIN || 'http://localhost:4200'}/auth/verify-email?token=${plainToken}`;
+    const verifyUrl = buildAppUrl(`/auth/verify-email?token=${plainToken}`);
     const mailResult = await sendEmailVerificationEmail({
       to: user.email,
       verifyUrl,
@@ -252,7 +251,7 @@ const registerUser = async (payload = {}, meta = {}) => {
       user: sanitizeUser(user),
       requiresEmailVerification: true,
       verificationEmailSent: mailResult.sent,
-      verificationUrl: verifyUrl,
+      verificationUrl: exposeSecretLinkInDev(verifyUrl, mailResult.sent),
     };
   }
 
@@ -512,17 +511,18 @@ const requestPasswordReset = async ({ email }, meta = {}) => {
     expiresAt,
   });
 
-  const resetUrl = `${process.env.CLIENT_ORIGIN || 'http://localhost:4200'}/auth/reset-password?token=${plainToken}`;
+  const resetUrl = buildAppUrl(`/auth/reset-password?token=${plainToken}`);
   const mailResult = await sendResetPasswordEmail({
     to: user.email,
     resetUrl,
     firstName: user.firstName,
   });
 
+  // Même message que pour un compte inconnu : la réponse ne révèle pas si l'adresse existe.
   return {
     success: true,
-    message: mailResult.message,
-    resetUrl,
+    message: 'Si le compte existe, un e-mail de réinitialisation sera envoyé.',
+    resetUrl: exposeSecretLinkInDev(resetUrl, mailResult.sent),
     expiresAt,
     sent: mailResult.sent,
   };
@@ -700,17 +700,26 @@ const createAdolescentForParent = async (parentUserId, payload = {}) => {
     expiresAt,
   });
 
-  const verifyUrl = `${process.env.CLIENT_ORIGIN || 'http://localhost:4200'}/auth/verify-email?token=${plainToken}`;
-  const mailResult = await sendEmailVerificationEmail({
-    to: adolescent.email,
-    verifyUrl,
-    firstName: adolescent.firstName,
-  });
+  const verifyUrl = buildAppUrl(`/auth/verify-email?token=${plainToken}`);
+
+  // Le compte est créé même si l'e-mail ne part pas : l'échec est signalé au parent
+  // (et écrit dans les journaux) au lieu de faire échouer toute la création.
+  let mailResult = { sent: false };
+  try {
+    mailResult = await sendEmailVerificationEmail({
+      to: adolescent.email,
+      verifyUrl,
+      firstName: adolescent.firstName,
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(`[mail] E-mail d'activation non envoyé à ${adolescent.email} : ${error.message}`);
+  }
 
   return {
     adolescent: sanitizeUser(adolescent),
     verificationEmailSent: mailResult.sent,
-    verificationUrl: verifyUrl,
+    verificationUrl: exposeSecretLinkInDev(verifyUrl, mailResult.sent),
     requiresEmailVerification: true,
   };
 };

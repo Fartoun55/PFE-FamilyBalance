@@ -592,7 +592,6 @@ const completeSurvey = async ({ sessionId, actor }) => {
 };
 
 module.exports = {
-  ensureSeeded,
   getAgeSegment,
   buildCatalog,
   startOrResumeSurvey,

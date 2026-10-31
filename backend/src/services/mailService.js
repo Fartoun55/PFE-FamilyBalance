@@ -70,14 +70,9 @@ const sendMailOrFallback = async (buildMessage, fallbackResult) => {
 };
 
 const sendResetPasswordEmail = async ({ to, resetUrl, firstName }) => {
-  const transport = createTransport();
-
-  if (!transport) {
-    throw new Error('SMTP non configuré. Configure un compte SMTP réel pour envoyer le lien de réinitialisation.');
-  }
-
-  try {
-    await transport.sendMail({
+  // Même repli que les autres e-mails : un échec SMTP est journalisé au lieu de faire échouer la demande.
+  const result = await sendMailOrFallback(
+    () => ({
       from: env.smtpFrom,
       to,
       subject: 'Réinitialisation du mot de passe FamilyBalance',
@@ -96,20 +91,11 @@ const sendResetPasswordEmail = async ({ to, resetUrl, firstName }) => {
         <p>Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet e-mail.</p>
       </div>
     `,
-    });
-  } catch (error) {
-    if (isSmtpAuthError(error)) {
-      throw new Error("Impossible d'envoyer l'e-mail de réinitialisation. Vérifie la configuration SMTP.");
-    }
+    }),
+    { sent: false }
+  );
 
-    throw new Error("Impossible d'envoyer l'e-mail de réinitialisation. Vérifie la configuration SMTP.");
-  }
-
-  return {
-    sent: true,
-    message: 'E-mail de réinitialisation envoyé.',
-    resetUrl,
-  };
+  return { sent: result.sent, resetUrl };
 };
 
 const sendEmailVerificationEmail = async ({ to, verifyUrl, firstName }) => {

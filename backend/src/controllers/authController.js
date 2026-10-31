@@ -343,7 +343,9 @@ const addAdolescent = asyncHandler(async (req, res) => {
 
   res.status(201).json({
     status: 'success',
-    message: 'Compte adolescent créé avec succès. Un e-mail de confirmation a été envoyé.',
+    message: result.verificationEmailSent
+      ? `Compte adolescent créé. Un e-mail d'activation a été envoyé à ${result.adolescent.email}.`
+      : "Compte adolescent créé, mais l'e-mail d'activation n'a pas pu être envoyé. Contactez l'administrateur de la plateforme.",
     adolescent: result.adolescent,
     verificationEmailSent: result.verificationEmailSent,
     verificationUrl: result.verificationUrl,

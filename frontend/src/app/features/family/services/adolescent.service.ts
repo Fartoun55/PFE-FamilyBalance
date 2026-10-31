@@ -32,7 +32,8 @@ export interface AddAdolescentResponse {
   message: string;
   adolescent: Adolescent;
   verificationEmailSent: boolean;
-  verificationUrl: string;
+  /** Fourni uniquement en développement, quand l'e-mail n'a pas pu partir. */
+  verificationUrl?: string;
 }
 
 @Injectable({

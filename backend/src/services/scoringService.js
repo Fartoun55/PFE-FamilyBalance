@@ -2,7 +2,7 @@ const AppError = require('../utils/AppError');
 const SurveySession = require('../models/SurveySession');
 const ScoreRecord = require('../models/ScoreRecord');
 const RiskAlert = require('../models/RiskAlert');
-const { getSessionForActor, resolveTargetUserId } = require('./surveyService');
+const { getSessionForActor, resolveTargetUserId, buildCatalog } = require('./surveyService');
 const { notifyScoreStored } = require('./notificationService');
 
 const DYNAMIC_WEIGHTS = {
@@ -133,7 +133,61 @@ const calculateRiskLevel = (globalScore) => resolveRiskThreshold(globalScore).le
 
 const calculateRiskCategory = (globalScore) => resolveRiskThreshold(globalScore).category;
 
-const buildRecommendations = ({ subScores, riskLevel, ageSegment }) => {
+// Score combiné : on retient le dernier questionnaire terminé de chaque domaine, sur une
+// fenêtre alignée sur la réévaluation trimestrielle, pour la même tranche d'âge.
+const COMBINATION_WINDOW_DAYS = 90;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Sessions retenues pour le score : la session de référence représente son domaine ;
+ * pour chaque autre domaine, la plus récente session terminée au plus tard à la même date,
+ * dans la fenêtre de COMBINATION_WINDOW_DAYS jours et pour la même tranche d'âge.
+ * Fonction pure (testée sans base de données).
+ */
+const selectSessionsForScore = (referenceSession, otherSessions = [], windowDays = COMBINATION_WINDOW_DAYS) => {
+  const referenceTime = new Date(referenceSession.completedAt || Date.now()).getTime();
+  const minTime = referenceTime - windowDays * DAY_MS;
+  const byDomain = new Map([[referenceSession.domain, referenceSession]]);
+
+  for (const candidate of otherSessions) {
+    if (String(candidate._id) === String(referenceSession._id)) continue;
+    if (candidate.domain === referenceSession.domain) continue;
+    if (candidate.ageSegment !== referenceSession.ageSegment) continue;
+
+    const time = new Date(candidate.completedAt || 0).getTime();
+    if (time < minTime || time > referenceTime) continue;
+
+    const current = byDomain.get(candidate.domain);
+    if (!current || time > new Date(current.completedAt || 0).getTime()) {
+      byDomain.set(candidate.domain, candidate);
+    }
+  }
+
+  return Array.from(byDomain.values());
+};
+
+/** Domaines évalués et domaines restants, dans l'ordre du catalogue de la tranche d'âge. */
+const describeDomainCoverage = (sessionsUsed, catalogDomains = []) => {
+  const order = catalogDomains.map((item) => item.value);
+  const rank = (domain) => (order.indexOf(domain) === -1 ? order.length : order.indexOf(domain));
+
+  const covered = sessionsUsed
+    .map((item) => ({
+      domain: item.domain,
+      domainLabel: item.domainLabel || item.domain,
+      session: item._id,
+      completedAt: item.completedAt,
+    }))
+    .sort((a, b) => rank(a.domain) - rank(b.domain));
+
+  const missing = catalogDomains
+    .filter((item) => !covered.some((c) => c.domain === item.value))
+    .map((item) => ({ domain: item.value, domainLabel: item.label }));
+
+  return { covered, missing };
+};
+
+const buildRecommendations = ({ subScores, riskLevel, ageSegment, missingDomains = [] }) => {
   const ordered = Object.entries(subScores).sort((a, b) => a[1] - b[1]);
   const recommendations = [];
 
@@ -167,6 +221,11 @@ const buildRecommendations = ({ subScores, riskLevel, ageSegment }) => {
   ordered.slice(0, 2).forEach(([dimension]) => {
     recommendations.push(dimensionMessage[dimension]);
   });
+
+  if (missingDomains.length) {
+    const labels = missingDomains.map((item) => item.domainLabel).join(', ');
+    recommendations.push(`Pour un bilan complet, répondre aussi au(x) domaine(s) : ${labels}.`);
+  }
 
   recommendations.push(riskMessage[riskLevel] || 'Recommandations personnalisées basées sur le niveau de risque.');
   recommendations.push(resourceMessage[riskLevel] || 'Explorer des ressources éducatives adaptées.');
@@ -237,11 +296,28 @@ const calculateAndStoreScore = async ({ actor, sessionId, trigger = 'manual' }) 
   // pas à l'acteur qui déclenche le calcul (qui peut être le parent).
   const ownerId = session.user;
 
-  const subScores = calculateSubScores(session.answers);
+  // Score combiné : dernier questionnaire de chaque domaine (voir selectSessionsForScore).
+  const otherSessions = await SurveySession.find({
+    user: ownerId,
+    status: 'completed',
+    ageSegment: session.ageSegment,
+    _id: { $ne: session._id },
+  }).select('domain domainLabel ageSegment completedAt answers');
+  const sessionsUsed = selectSessionsForScore(session, otherSessions);
+  const answers = sessionsUsed.flatMap((item) => item.answers || []);
+  const catalog = await buildCatalog(session.ageSegment);
+  const { covered, missing } = describeDomainCoverage(sessionsUsed, catalog.domains);
+
+  const subScores = calculateSubScores(answers);
   const { globalScore, weights } = calculateGlobalScore({ subScores, ageSegment: session.ageSegment });
   const riskLevel = calculateRiskLevel(globalScore);
   const riskCategory = calculateRiskCategory(globalScore);
-  const recommendations = buildRecommendations({ subScores, riskLevel, ageSegment: session.ageSegment });
+  const recommendations = buildRecommendations({
+    subScores,
+    riskLevel,
+    ageSegment: session.ageSegment,
+    missingDomains: missing,
+  });
 
   const scoreRecord = await ScoreRecord.findOneAndUpdate(
     { sourceSession: session._id },
@@ -257,7 +333,9 @@ const calculateAndStoreScore = async ({ actor, sessionId, trigger = 'manual' }) 
         riskLevel,
         riskCategory,
         recommendations,
-        answerCount: session.answers.filter((item) => !item.draft).length,
+        answerCount: answers.filter((item) => !item.draft).length,
+        domainsCovered: covered,
+        domainsMissing: missing,
         trigger,
         calculatedAt: new Date(),
       },
@@ -332,6 +410,9 @@ const getLatestScoringResult = async (actor, childId) => {
 };
 
 module.exports = {
+  selectSessionsForScore,
+  describeDomainCoverage,
+  calculateSubScores,
   calculateAndStoreScore,
   getScoringHistory,
   getLatestScoringResult,

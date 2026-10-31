@@ -47,6 +47,9 @@ app.use(
     max: 120,
     standardHeaders: true,
     legacyHeaders: false,
+    // Sondes Kubernetes (toutes les 10 s et 20 s) : sans cette exclusion elles dépasseraient
+    // la limite, recevraient un 429 et le pod serait jugé en panne puis redémarré.
+    skip: (req) => req.path === '/health',
   })
 );
 

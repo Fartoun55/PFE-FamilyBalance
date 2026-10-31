@@ -20,6 +20,14 @@ describe('Santé du service', () => {
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['x-powered-by']).toBeUndefined();
   });
+
+  it('GET /health n\'est jamais bloqué par la limite de requêtes (sondes répétées)', async () => {
+    for (let i = 0; i < 125; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await request(app).get('/health');
+      expect(res.status).toBe(200);
+    }
+  });
 });
 
 describe('Routes inconnues', () => {
